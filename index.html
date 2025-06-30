@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPUB 閱讀器</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- 歡迎界面 -->
+        <div id="welcome-screen" class="screen">
+            <div class="container">
+                <div class="welcome-content">
+                    <h1 class="welcome-title">📚 EPUB 閱讀器</h1>
+                    <p class="welcome-subtitle">開啟您的數位閱讀之旅</p>
+                    <div class="upload-area" id="upload-area">
+                        <div class="upload-icon">📁</div>
+                        <p class="upload-text">點擊選擇或拖拽 EPUB 檔案</p>
+                        <button class="btn btn--primary btn--lg" id="upload-btn">選擇 EPUB 檔案</button>
+                        <input type="file" id="file-input" accept=".epub" style="display: none;">
+                    </div>
+                    <div class="demo-section">
+                        <p class="demo-text">沒有EPUB檔案？試試演示模式</p>
+                        <button class="btn btn--secondary btn--lg" id="demo-btn">載入演示內容</button>
+                    </div>
+                    <div class="features-grid">
+                        <div class="feature-card">
+                            <div class="feature-icon">📖</div>
+                            <h3>多種閱讀模式</h3>
+                            <p>分頁、卷軸、雙頁模式</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🔍</div>
+                            <h3>全文搜尋</h3>
+                            <p>快速找到所需內容</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">📝</div>
+                            <h3>筆記書籤</h3>
+                            <p>記錄重要片段</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🎨</div>
+                            <h3>個性化設定</h3>
+                            <p>自訂閱讀體驗</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 載入畫面 -->
+        <div id="loading-screen" class="screen hidden">
+            <div class="container">
+                <div class="loading-content">
+                    <div class="loading-spinner"></div>
+                    <h2>載入中...</h2>
+                    <p id="loading-text">正在解析 EPUB 檔案</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="loading-progress"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 閱讀界面 -->
+        <div id="reader-screen" class="screen hidden">
+            <!-- 頂部工具列 -->
+            <header class="reader-header">
+                <div class="header-left">
+                    <button class="btn btn--secondary btn--sm" id="back-btn">← 返回</button>
+                    <button class="btn btn--secondary btn--sm" id="toc-btn">📋 目錄</button>
+                </div>
+                <div class="header-center">
+                    <h2 id="book-title">書籍標題</h2>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn--secondary btn--sm" id="search-btn">🔍</button>
+                    <button class="btn btn--secondary btn--sm" id="bookmark-btn">🔖</button>
+                    <button class="btn btn--secondary btn--sm" id="settings-btn">⚙️</button>
+                </div>
+            </header>
+
+            <!-- 主要閱讀區域 -->
+            <main class="reader-main">
+                <div id="viewer" class="epub-viewer"></div>
+                
+                <!-- 閱讀控制項 -->
+                <div class="reader-controls">
+                    <button class="control-btn" id="prev-btn">‹</button>
+                    <div class="progress-container">
+                        <input type="range" id="progress-slider" class="progress-slider" min="0" max="100" value="0">
+                        <div class="progress-info">
+                            <span id="current-chapter">章節 1</span>
+                            <span id="reading-progress">0%</span>
+                        </div>
+                    </div>
+                    <button class="control-btn" id="next-btn">›</button>
+                </div>
+            </main>
+
+            <!-- 側邊欄 - 目錄 -->
+            <aside id="toc-sidebar" class="sidebar hidden">
+                <div class="sidebar-header">
+                    <h3>目錄</h3>
+                    <button class="btn btn--secondary btn--sm" id="close-toc">✕</button>
+                </div>
+                <div class="sidebar-content">
+                    <ul id="toc-list" class="toc-list"></ul>
+                </div>
+            </aside>
+
+            <!-- 側邊欄 - 書籤 -->
+            <aside id="bookmark-sidebar" class="sidebar hidden">
+                <div class="sidebar-header">
+                    <h3>書籤與筆記</h3>
+                    <button class="btn btn--secondary btn--sm" id="close-bookmark">✕</button>
+                </div>
+                <div class="sidebar-content">
+                    <div class="bookmark-tabs">
+                        <button class="tab-btn active" data-tab="bookmarks">書籤</button>
+                        <button class="tab-btn" data-tab="notes">筆記</button>
+                        <button class="tab-btn" data-tab="highlights">劃重點</button>
+                    </div>
+                    <div id="bookmarks-tab" class="tab-content active">
+                        <ul id="bookmarks-list" class="bookmarks-list"></ul>
+                    </div>
+                    <div id="notes-tab" class="tab-content">
+                        <ul id="notes-list" class="notes-list"></ul>
+                    </div>
+                    <div id="highlights-tab" class="tab-content">
+                        <ul id="highlights-list" class="highlights-list"></ul>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 搜尋面板 -->
+            <div id="search-panel" class="search-panel hidden">
+                <div class="search-header">
+                    <input type="text" id="search-input" class="form-control" placeholder="搜尋文字...">
+                    <button class="btn btn--primary" id="search-execute">搜尋</button>
+                    <button class="btn btn--secondary" id="close-search">✕</button>
+                </div>
+                <div class="search-results" id="search-results"></div>
+            </div>
+
+            <!-- 設定面板 -->
+            <div id="settings-panel" class="settings-panel hidden">
+                <div class="settings-header">
+                    <h3>閱讀設定</h3>
+                    <button class="btn btn--secondary btn--sm" id="close-settings">✕</button>
+                </div>
+                <div class="settings-content">
+                    <div class="settings-group">
+                        <label class="form-label">閱讀模式</label>
+                        <div class="radio-group">
+                            <label class="radio-option">
+                                <input type="radio" name="reading-mode" value="paginated" checked>
+                                <span>分頁模式</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="reading-mode" value="scrolled">
+                                <span>卷軸模式</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <label class="form-label">字體大小</label>
+                        <input type="range" id="font-size-slider" class="form-control" min="12" max="24" value="16">
+                        <span id="font-size-value">16px</span>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <label class="form-label">字體家族</label>
+                        <select id="font-family-select" class="form-control">
+                            <option value="default">預設字體</option>
+                            <option value="serif">襯線字體</option>
+                            <option value="sans-serif">無襯線字體</option>
+                            <option value="monospace">等寬字體</option>
+                        </select>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <label class="form-label">背景主題</label>
+                        <div class="theme-options">
+                            <button class="theme-btn active" data-theme="light">🌞 明亮</button>
+                            <button class="theme-btn" data-theme="dark">🌙 黑暗</button>
+                            <button class="theme-btn" data-theme="sepia">📜 護眼</button>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <label class="form-label">行距</label>
+                        <input type="range" id="line-height-slider" class="form-control" min="1.2" max="2.0" step="0.1" value="1.5">
+                        <span id="line-height-value">1.5</span>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <label class="form-label">頁面邊距</label>
+                        <input type="range" id="margin-slider" class="form-control" min="20" max="80" value="40">
+                        <span id="margin-value">40px</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 文字選取工具提示 -->
+    <div id="selection-tooltip" class="selection-tooltip hidden">
+        <button class="tooltip-btn" id="highlight-btn">🖍️ 劃重點</button>
+        <button class="tooltip-btn" id="note-btn">📝 做筆記</button>
+        <button class="tooltip-btn" id="copy-btn">📋 複製</button>
+        <button class="tooltip-btn" id="speak-btn">🔊 朗讀</button>
+    </div>
+
+    <!-- 筆記對話框 -->
+    <div id="note-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>新增筆記</h3>
+                <button class="btn btn--secondary btn--sm" id="close-note-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="selected-text" id="selected-text-display"></div>
+                <textarea id="note-textarea" class="form-control" placeholder="輸入您的筆記..." rows="4"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn--secondary" id="cancel-note">取消</button>
+                <button class="btn btn--primary" id="save-note">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
