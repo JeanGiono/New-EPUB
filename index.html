@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>排班工具 v8.4</title>
+    <title>排班工具 v8.5</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
@@ -83,6 +83,7 @@
         }
         #managementModal .modal-content { max-width: 700px; }
         #confirmModal .modal-content { max-width: 420px; }
+        #secondaryAssignmentModal .modal-content { max-width: 350px; }
 
         .close-button {
             color: #aaa; float: right; font-size: 28px;
@@ -208,7 +209,7 @@
             <div id="secondaryScheduleControlsAboveCalendar" class="mb-4 hidden">
                 <button id="toggleSecondaryStaffInfoButton" type="button" class="mb-3 w-full bg-indigo-500 text-white py-2 px-4 rounded-md hover:bg-indigo-600 transition-colors">顯示組別成員</button>
                 <div id="secondaryStaffInfoDiv" class="text-sm text-slate-600 space-y-1 p-3 bg-slate-50 rounded-md border border-slate-200 hidden"></div>
-                 <p class="text-xs text-slate-500 mt-2">第二班表為自動固定輪替，僅於週末排班。此為基於固定基準日的連續輪替。您可以到「管理設定」中修改組員名單。</p>
+                 <p class="text-xs text-slate-500 mt-2">第二班表預設為週末自動輪替。您可以**點擊日曆上的日期**來手動調整或清空當天的第二班表。</p>
                  <div class="mt-4 text-right">
                     <button id="exportSecondaryScheduleButton" type="button" onclick="Exporter.exportSecondaryToICS()" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">匯出第二班表 (.ics)</button>
                 </div>
@@ -327,7 +328,7 @@
                         </div>
                         <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors">更新第二班表設定並重算</button>
                     </form>
-                    <p class="text-xs text-slate-500 mt-2">修改人員或基準日後，將自動重新計算未來的第二班表週末輪替。</p>
+                    <p class="text-xs text-slate-500 mt-2">修改人員或基準日後，將自動重新計算未來的第二班表週末輪替（手動設定的排班將會被清除）。</p>
                 </section>
             </section>
 
@@ -356,6 +357,7 @@
         </div>
     </div>
 
+    <!-- 主要班表指派彈出視窗 -->
     <div id="assignmentModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="assignmentModalTitle">
         <div class="modal-content">
             <button class="close-button" onclick="UI.closeAssignmentModal()" aria-label="關閉">&times;</button>
@@ -363,6 +365,19 @@
             <p id="noStaffMessage" class="text-slate-600 hidden">請先在「管理設定」中新增本月份的主要班表人員名單。</p>
             <div id="modalStaffList" class="space-y-1 max-h-60 overflow-y-auto staff-list-modal"></div>
             <button id="clearAssignmentButton" type="button" class="mt-4 w-full bg-red-500 text-white py-2 px-3 rounded-md hover:bg-red-600 transition-colors hidden">清除此日主要班表值班</button>
+        </div>
+    </div>
+
+    <!-- 第二班表指派彈出視窗 (新增) -->
+    <div id="secondaryAssignmentModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="secondaryAssignmentModalTitle">
+        <div class="modal-content">
+            <button class="close-button" onclick="UI.closeSecondaryAssignmentModal()" aria-label="關閉">&times;</button>
+            <h3 id="secondaryAssignmentModalTitle" class="text-lg font-semibold mb-4 text-sky-700">調整第二班表組別</h3>
+            <div id="secondaryModalGroupList" class="space-y-2 mb-4"></div>
+            <div class="space-y-2 mt-4 pt-4 border-t border-gray-200">
+                <button id="clearSecondaryAssignmentButton" type="button" class="w-full bg-slate-500 text-white py-2 px-3 rounded-md hover:bg-slate-600 transition-colors font-medium">恢復自動排班 (重算此日)</button>
+                <button id="emptySecondaryAssignmentButton" type="button" class="w-full bg-red-500 text-white py-2 px-3 rounded-md hover:bg-red-600 transition-colors font-medium">設為無班 (清空此日)</button>
+            </div>
         </div>
     </div>
 
@@ -412,7 +427,6 @@
         currentYear: new Date().getFullYear(),
         currentMonth: new Date().getMonth(),
         activeView: 'primary',
-        // 已將 "Bao融" 移除
         defaultStaffNames: ["學翰", "志龍", "國維", "靖興", "宜君", "欣諭", "耀恩"],
         staffNames: [],
         shifts: {},
@@ -464,6 +478,8 @@
         monthYearDisplay: null, calendarGrid: null, staffNameInput: null,
         fullSchedulePasteArea: null, staffListDiv: null,
         assignmentModal: null, modalStaffList: null, clearAssignmentButton: null,
+        secondaryAssignmentModal: null, secondaryModalGroupList: null, 
+        clearSecondaryAssignmentButton: null, emptySecondaryAssignmentButton: null,
         noStaffMessage: null, customAlertBox: null,
         customAlertMessageBox: null,
         staffFilterSelect: null,
@@ -530,7 +546,6 @@
                 const shiftsData = localStorage.getItem(Utils.getLocalStorageKey('shifts'));
                 AppState.shifts = shiftsData ? JSON.parse(shiftsData) : {};
                 
-                // 一次性升級遷移：強制從舊資料中移除 Bao融
                 if (!localStorage.getItem('shifttool_bao_removed_v8_4')) {
                     AppState.staffNames = AppState.staffNames.filter(name => name !== "Bao融");
                     for (let key in AppState.shifts) {
@@ -549,7 +564,6 @@
                 const holidaysData = localStorage.getItem(Utils.getLocalStorageKey('holidays_all'));
                 AppState.holidays = holidaysData ? JSON.parse(holidaysData) : {};
                 
-                // 讀取第二班表自訂設定
                 const secConfigData = localStorage.getItem(Utils.getLocalStorageKey('secondary_schedule_config'));
                 if (secConfigData) {
                     const parsedConfig = JSON.parse(secConfigData);
@@ -578,7 +592,6 @@
                 localStorage.setItem(Utils.getLocalStorageKey('holidays_all'), JSON.stringify(AppState.holidays));
                 localStorage.setItem(Utils.getLocalStorageKey('secondary_shifts'), JSON.stringify(AppState.secondarySchedule.shifts));
                 
-                // 儲存第二班表自訂設定
                 localStorage.setItem(Utils.getLocalStorageKey('secondary_schedule_config'), JSON.stringify({
                     groupDefinitions: AppState.secondarySchedule.groupDefinitions,
                     anchor: AppState.secondarySchedule.anchor,
@@ -726,16 +739,9 @@
             const year = AppState.currentYear;
             const month_0_indexed = AppState.currentMonth;
             const daysInMonth = new Date(year, month_0_indexed + 1, 0).getDate();
-            const currentMonthKey = `${year}-${String(month_0_indexed + 1).padStart(2, '0')}`;
             let needsSave = false;
 
-            const shiftsToDelete = [];
-            for (const dateKey in AppState.secondarySchedule.shifts) {
-                if (dateKey.startsWith(currentMonthKey)) {
-                    shiftsToDelete.push(dateKey);
-                }
-            }
-            shiftsToDelete.forEach(key => delete AppState.secondarySchedule.shifts[key]);
+            // 注意：這裡我們不再強制刪除本月的第二班表資料，以保留使用者的手動調整
 
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentDate = new Date(year, month_0_indexed, day);
@@ -743,6 +749,7 @@
                 const utcDate = new Date(Date.UTC(year, month_0_indexed, day));
                 const dateStr = Utils.formatDateToKey(utcDate);
 
+                // 如果已經有資料 (包含手動設定的組別或 "NONE" 無班)，就跳過不覆寫
                 if (AppState.secondarySchedule.shifts[dateStr]) continue;
 
                 if (dayOfWeek === 6) {
@@ -753,7 +760,10 @@
 
                         if (day + 1 <= daysInMonth) {
                             const sundayUtcDate = new Date(Date.UTC(year, month_0_indexed, day + 1));
-                            AppState.secondarySchedule.shifts[Utils.formatDateToKey(sundayUtcDate)] = weekendGroup.name;
+                            // 同樣檢查週日是否已被手動設定
+                            if (!AppState.secondarySchedule.shifts[Utils.formatDateToKey(sundayUtcDate)]) {
+                                AppState.secondarySchedule.shifts[Utils.formatDateToKey(sundayUtcDate)] = weekendGroup.name;
+                            }
                         }
                     }
                 } else if (dayOfWeek === 0) {
@@ -795,7 +805,7 @@
             UI.updateSecondaryStaffInfoUI();
             SecondaryScheduler.ensureScheduleForCurrentMonth();
             Calendar.render();
-            Utils.showCustomAlert("第二班表設定已更新！", "success");
+            Utils.showCustomAlert("第二班表設定已更新！歷史與未來調整均已重設。", "success");
             UI.closeManagementModal();
         }
     };
@@ -966,9 +976,7 @@
                 const holidayName = AppState.holidays[dateStr];
 
                 dayCell.className = 'calendar-day p-2 rounded-md';
-                if (AppState.activeView === 'primary') dayCell.classList.add('cursor-pointer');
-                dayCell.dataset.date = dateStr;
-
+                
                 if (dateStr === todayStr) {
                     dayCell.classList.add('today');
                 }
@@ -988,9 +996,9 @@
                 }
                 dayHeader.appendChild(dayNumber);
 
-                if (AppState.activeView === 'primary' && isWeekend && !holidayName) {
+                if (AppState.activeView === 'primary' && !holidayName) {
                     const secondaryShiftGroupName = AppState.secondarySchedule.shifts[dateStr];
-                    if (secondaryShiftGroupName) {
+                    if (secondaryShiftGroupName && secondaryShiftGroupName !== "NONE") {
                         const indicator = document.createElement('span');
                         indicator.className = 'secondary-indicator-inline';
                         indicator.textContent = secondaryShiftGroupName; 
@@ -1003,6 +1011,7 @@
                 contentWrapper.className = 'day-content-wrapper';
 
                 if (AppState.activeView === 'primary') {
+                    dayCell.classList.add('cursor-pointer');
                     dayCell.addEventListener('click', () => UI.openAssignmentModal(dateStr));
 
                     const primaryShiftCell = document.createElement('div');
@@ -1046,19 +1055,26 @@
                     contentWrapper.appendChild(holidayCell);
 
                 } else if (AppState.activeView === 'secondary') {
-                    if (isWeekend && !holidayName) {
-                        const secondaryShiftGroupName = AppState.secondarySchedule.shifts[dateStr];
-                        if (secondaryShiftGroupName) {
-                            const groupInfo = AppState.secondarySchedule.groupDefinitions.find(g => g.name === secondaryShiftGroupName);
-                            if (groupInfo) {
-                                const groupSpan = document.createElement('span');
-                                groupSpan.className = 'assigned-group text-lg';
-                                groupSpan.textContent = groupInfo.name;
-                                groupSpan.style.backgroundColor = groupInfo.color.background;
-                                groupSpan.style.color = groupInfo.color.text;
-                                groupSpan.style.borderColor = groupInfo.color.text;
-                                contentWrapper.appendChild(groupSpan);
-                            }
+                    dayCell.classList.add('cursor-pointer');
+                    dayCell.addEventListener('click', () => UI.openSecondaryAssignmentModal(dateStr));
+
+                    const secondaryShiftGroupName = AppState.secondarySchedule.shifts[dateStr];
+                    if (secondaryShiftGroupName && secondaryShiftGroupName !== "NONE") {
+                        const groupInfo = AppState.secondarySchedule.groupDefinitions.find(g => g.name === secondaryShiftGroupName);
+                        if (groupInfo) {
+                            const groupSpan = document.createElement('span');
+                            groupSpan.className = 'assigned-group text-lg';
+                            groupSpan.textContent = groupInfo.name;
+                            groupSpan.style.backgroundColor = groupInfo.color.background;
+                            groupSpan.style.color = groupInfo.color.text;
+                            groupSpan.style.borderColor = groupInfo.color.text;
+                            contentWrapper.appendChild(groupSpan);
+                        } else {
+                            // 預留給非標準群組文字
+                            const groupSpan = document.createElement('span');
+                            groupSpan.className = 'assigned-group text-lg bg-gray-200 text-gray-700 border-gray-400';
+                            groupSpan.textContent = secondaryShiftGroupName;
+                            contentWrapper.appendChild(groupSpan);
                         }
                     }
                 }
@@ -1268,9 +1284,18 @@
             UIElements.staffNameInput = document.getElementById('staffNameInput');
             UIElements.fullSchedulePasteArea = document.getElementById('fullSchedulePasteArea');
             UIElements.staffListDiv = document.getElementById('staffList');
+            
+            // 主要排班視窗
             UIElements.assignmentModal = document.getElementById('assignmentModal');
             UIElements.modalStaffList = document.getElementById('modalStaffList');
             UIElements.clearAssignmentButton = document.getElementById('clearAssignmentButton');
+            
+            // 第二排班調整視窗
+            UIElements.secondaryAssignmentModal = document.getElementById('secondaryAssignmentModal');
+            UIElements.secondaryModalGroupList = document.getElementById('secondaryModalGroupList');
+            UIElements.clearSecondaryAssignmentButton = document.getElementById('clearSecondaryAssignmentButton');
+            UIElements.emptySecondaryAssignmentButton = document.getElementById('emptySecondaryAssignmentButton');
+
             UIElements.noStaffMessage = document.getElementById('noStaffMessage');
             UIElements.customAlertBox = document.getElementById('customAlert');
             UIElements.customAlertMessageBox = document.getElementById('customAlertMessage');
@@ -1535,6 +1560,53 @@
                 Utils.showCustomAlert(`${AppState.selectedDateForAssignment} 的 ${clearedPerson} 主要班表值班已清除。`, "success");
             }
         },
+
+        // 第二班表手動調整功能
+        openSecondaryAssignmentModal: (dateStr) => {
+            if (AppState.selectedDateForAssignment) {
+                const oldSelectedCell = UIElements.calendarGrid.querySelector(`[data-date="${AppState.selectedDateForAssignment}"]`);
+                if (oldSelectedCell) oldSelectedCell.classList.remove('selected-day');
+            }
+
+            AppState.selectedDateForAssignment = dateStr;
+            const newSelectedCell = UIElements.calendarGrid.querySelector(`[data-date="${dateStr}"]`);
+            if (newSelectedCell) newSelectedCell.classList.add('selected-day');
+
+            if (!UIElements.secondaryAssignmentModal || !UIElements.secondaryModalGroupList) return;
+
+            UIElements.secondaryModalGroupList.innerHTML = '';
+            
+            // 加入各組別的按鈕
+            AppState.secondarySchedule.groupDefinitions.forEach(group => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'w-full text-left p-3 rounded-md font-semibold flex items-center justify-center transition-opacity hover:opacity-80';
+                button.textContent = `指派為 ${group.name} 組`;
+                button.style.backgroundColor = group.color.background;
+                button.style.color = group.color.text;
+                button.style.border = `1px solid ${group.color.text}`;
+                
+                button.onclick = () => {
+                    AppState.secondarySchedule.shifts[dateStr] = group.name;
+                    DataStorage.saveData();
+                    Calendar.render();
+                    UI.closeSecondaryAssignmentModal();
+                    Utils.showCustomAlert(`已手動將 ${dateStr} 的第二班表設為 ${group.name} 組。`, "success");
+                };
+                UIElements.secondaryModalGroupList.appendChild(button);
+            });
+
+            UIElements.secondaryAssignmentModal.style.display = 'flex';
+        },
+        closeSecondaryAssignmentModal: () => {
+            if (AppState.selectedDateForAssignment) {
+                const selectedCell = UIElements.calendarGrid.querySelector(`[data-date="${AppState.selectedDateForAssignment}"]`);
+                if (selectedCell) selectedCell.classList.remove('selected-day');
+            }
+            if (UIElements.secondaryAssignmentModal) UIElements.secondaryAssignmentModal.style.display = 'none';
+            AppState.selectedDateForAssignment = null;
+        },
+
         openAutoScheduleConfirmModal: (defaults = {}) => {
             const autoScheduleConfirmModal = UIElements.autoScheduleConfirmModal;
             const autoScheduleConfirmMessage = UIElements.autoScheduleConfirmMessage;
@@ -1645,7 +1717,8 @@
             const shiftsToExport = {};
             const currentMonthPrefix = `${AppState.currentYear}-${String(AppState.currentMonth + 1).padStart(2, '0')}`;
             for (const dateStr in AppState.secondarySchedule.shifts) {
-                if (dateStr.startsWith(currentMonthPrefix) && !AppState.holidays[dateStr]) {
+                // 排除設為 NONE (無班) 的日子
+                if (dateStr.startsWith(currentMonthPrefix) && !AppState.holidays[dateStr] && AppState.secondarySchedule.shifts[dateStr] !== "NONE") {
                     shiftsToExport[dateStr] = AppState.secondarySchedule.shifts[dateStr];
                 }
             }
@@ -1854,6 +1927,31 @@
         // Event Listeners
         if (UIElements.clearAssignmentButton) UIElements.clearAssignmentButton.onclick = UI.clearAssignment;
 
+        // 第二班表的手動操作綁定
+        if (UIElements.clearSecondaryAssignmentButton) {
+            UIElements.clearSecondaryAssignmentButton.onclick = () => {
+                if (AppState.selectedDateForAssignment) {
+                    delete AppState.secondarySchedule.shifts[AppState.selectedDateForAssignment];
+                    DataStorage.saveData();
+                    Calendar.render();
+                    UI.closeSecondaryAssignmentModal();
+                    Utils.showCustomAlert(`已恢復自動排班規則。`, "success");
+                }
+            };
+        }
+
+        if (UIElements.emptySecondaryAssignmentButton) {
+            UIElements.emptySecondaryAssignmentButton.onclick = () => {
+                if (AppState.selectedDateForAssignment) {
+                    AppState.secondarySchedule.shifts[AppState.selectedDateForAssignment] = "NONE";
+                    DataStorage.saveData();
+                    Calendar.render();
+                    UI.closeSecondaryAssignmentModal();
+                    Utils.showCustomAlert(`已將該日的第二班表設為無班。`, "success");
+                }
+            };
+        }
+
         if (UIElements.staffFilterSelect) {
             UIElements.staffFilterSelect.addEventListener('change', (event) => {
                 AppState.selectedStaffForFilter = event.target.value;
@@ -1906,6 +2004,7 @@
         window.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 if (UIElements.assignmentModal && UIElements.assignmentModal.style.display === 'flex') UI.closeAssignmentModal();
+                if (UIElements.secondaryAssignmentModal && UIElements.secondaryAssignmentModal.style.display === 'flex') UI.closeSecondaryAssignmentModal();
                 if (UIElements.autoScheduleConfirmModal && UIElements.autoScheduleConfirmModal.style.display === 'flex') UI.closeAutoScheduleConfirmModal();
                 if (UIElements.managementModal && UIElements.managementModal.style.display === 'flex') UI.closeManagementModal();
                 if (UIElements.confirmModal && UIElements.confirmModal.style.display === 'flex') UI.closeConfirmModal();
@@ -1914,6 +2013,7 @@
 
         window.onclick = function(event) {
             if (event.target == UIElements.assignmentModal) UI.closeAssignmentModal();
+            if (event.target == UIElements.secondaryAssignmentModal) UI.closeSecondaryAssignmentModal();
             if (event.target == UIElements.autoScheduleConfirmModal) UI.closeAutoScheduleConfirmModal();
             if (event.target == UIElements.managementModal) UI.closeManagementModal();
             if (event.target == UIElements.confirmModal) UI.closeConfirmModal();
@@ -1925,3 +2025,4 @@
     </div>
 </body>
 </html>
+
