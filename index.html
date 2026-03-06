@@ -1,190 +1,1927 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EPUB 閱讀器</title>
+    <title>排班工具 v8.4</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .calendar-day {
+            min-height: 110px;
+            transition: background-color 0.3s, border-color 0.3s;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #e5e7eb; /* default border */
+        }
+        .calendar-day:hover {
+            background-color: #f0f9ff;
+        }
+        .today {
+            border-width: 2px;
+            border-color: #c084fc; 
+        }
+        .selected-day {
+            background-color: #dbeafe !important;
+            border-color: #60a5fa !important;
+        }
+        .assigned-person {
+            font-size: 1.1rem;
+            font-weight: 600;
+            padding: 2px 4px;
+            border-radius: 9999px;
+            min-width: 32px;
+            min-height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .assigned-group {
+            font-weight: 600;
+            padding: 4px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            margin-top: 4px;
+            border: 1px solid;
+            width: 100%;
+            height: calc(100% - 20px);
+            box-sizing: border-box;
+        }
+        .secondary-indicator-inline {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #388e3c;
+            background-color: #e8f5e9;
+            padding: 1px 5px;
+            border-radius: 4px;
+            line-height: 1;
+        }
+        .modal {
+            display: none; position: fixed; z-index: 100;
+            left: 0; top: 0; width: 100%; height: 100%;
+            overflow: auto; background-color: rgba(0,0,0,0.5);
+            align-items: center; justify-content: center;
+            transition: opacity 0.3s ease;
+        }
+        .modal-content {
+            background-color: #fefefe; margin: auto; padding: 24px;
+            border: 1px solid #888; width: 90%;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        #managementModal .modal-content { max-width: 700px; }
+        #confirmModal .modal-content { max-width: 420px; }
+
+        .close-button {
+            color: #aaa; float: right; font-size: 28px;
+            font-weight: bold;
+        }
+        .close-button:hover, .close-button:focus {
+            color: black; text-decoration: none; cursor: pointer;
+        }
+        .custom-alert {
+            display: none; position: fixed; top: 20px; left: 50%;
+            transform: translateX(-50%); padding: 15px;
+            border: 1px solid; border-radius: 8px;
+            z-index: 1050;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 300px; text-align: center;
+        }
+        .custom-alert.error { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb;}
+        .custom-alert.success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+        .custom-alert.loading { background-color: #fff3cd; color: #856404; border-color: #ffeeba; }
+        .custom-alert.info { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
+        .staff-color-indicator {
+            display: inline-block; width: 12px; height: 12px;
+            border-radius: 3px;
+            margin-right: 8px;
+            border: 1px solid #888;
+            vertical-align: middle;
+        }
+        .calendar-day.filtered-out {
+            background-color: #f8f9fa !important;
+            opacity: 0.7;
+        }
+        .calendar-day.filtered-out .primary-shift-person,
+        .calendar-day.filtered-out .sentry-shift-note,
+        .calendar-day.filtered-out .holiday-info {
+             visibility: hidden;
+        }
+        .tab-button {
+            padding: 0.75rem 1rem;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            color: #4b5563;
+            transition: all 0.3s ease;
+        }
+        .tab-button:hover {
+            border-bottom-color: #3b82f6;
+            color: #1d4ed8;
+        }
+        .tab-button.active-tab {
+            border-bottom-color: #2563eb;
+            color: #1e3a8a;
+            font-weight: 700;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .day-content-wrapper {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .primary-shift-person, .sentry-shift-note, .holiday-info {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 28px;
+        }
+
+        @media print {
+            body > header, .modal, #primaryScheduleControls, #secondaryScheduleControlsAboveCalendar, body > main > header, body > div[style*="text-align: center"] {
+                display: none !important;
+            }
+            body, main.container, section.bg-white {
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+                max-width: 100% !important;
+            }
+            .calendar-day {
+                min-height: 90px;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            #monthYearDisplay {
+                padding-top: 1rem;
+                padding-bottom: 1rem;
+            }
+        }
+    </style>
 </head>
-<body class="bg-gray-50 dark:bg-gray-900">
-    <!-- 檔案上傳區域 -->
-    <div id="uploadArea" class="container mx-auto px-4 py-8">
-        <div class="max-w-md mx-auto">
-            <div class="card">
-                <div class="card__body text-center">
-                    <h1 class="text-2xl font-bold mb-6">EPUB 閱讀器</h1>
-                    <input type="file" id="epubFile" accept=".epub" class="hidden">
-                    <button id="uploadBtn" class="btn btn--primary btn--full-width mb-4">
-                        選擇 EPUB 檔案
-                    </button>
-                    <div id="uploadStatus" class="text-sm text-gray-600 dark:text-gray-400"></div>
-                </div>
-            </div>
-        </div>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="customAlert" class="custom-alert">
+        <span id="customAlertMessage"></span>
     </div>
 
-    <!-- 閱讀器主介面 -->
-    <div id="readerArea" class="hidden">
-        <!-- 頂部工具列 -->
-        <div class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <button id="backToUpload" class="btn btn--secondary btn--sm">
-                        ← 返回
-                    </button>
-                    <h2 id="bookTitle" class="text-lg font-semibold truncate max-w-xs"></h2>
+    <main class="container mx-auto p-4">
+        <header class="mb-6 p-4 bg-white shadow-md rounded-lg">
+            <div class="flex justify-between items-center">
+                <h1 id="mainTitle" class="text-3xl font-bold text-sky-700">排班工具</h1>
+                <button id="openManagementModalButton" type="button" class="bg-slate-600 text-white py-2 px-4 rounded-md hover:bg-slate-700 transition-colors flex items-center">
+                    <i class="fas fa-cog mr-2"></i>管理設定
+                </button>
+            </div>
+        </header>
+
+        <section class="bg-white p-6 shadow-lg rounded-lg" aria-labelledby="calendar-section-title">
+            <h2 id="calendar-section-title" class="sr-only">班表日曆與控制區域</h2>
+            <nav class="mb-4 border-b border-gray-200" aria-label="Tabs">
+                <div class="-mb-px flex flex-wrap space-x-2 sm:space-x-8">
+                    <button id="primaryScheduleTabButton" type="button" class="tab-button active-tab" role="tab" aria-selected="true">主要班表</button>
+                    <button id="secondaryScheduleTabButton" type="button" class="tab-button" role="tab" aria-selected="false">第二班表 (週末)</button>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button id="tocBtn" class="btn btn--secondary btn--sm">目錄</button>
-                    <button id="bookmarkBtn" class="btn btn--secondary btn--sm">書籤</button>
-                    <button id="settingsBtn" class="btn btn--secondary btn--sm">設定</button>
-                </div>
-            </div>
-        </div>
+            </nav>
 
-        <!-- 閱讀內容區域 -->
-        <div class="flex-1 relative">
-            <div id="epubViewer" class="epub-viewer"></div>
-            
-            <!-- 載入中提示 -->
-            <div id="loadingMessage" class="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-900 bg-opacity-90">
-                <div class="text-center">
-                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
-                    <p class="text-gray-600 dark:text-gray-400">正在載入書籍，請稍候...</p>
+            <div class="flex justify-between items-center mb-4">
+                <button type="button" onclick="Calendar.changeMonth(-1)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 py-2 px-4 rounded-md transition-colors" aria-label="上個月">&lt;</button>
+                <h2 id="monthYearDisplay" class="text-xl font-bold text-sky-700" aria-live="polite"></h2>
+                <button type="button" onclick="Calendar.changeMonth(1)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 py-2 px-4 rounded-md transition-colors" aria-label="下個月">&gt;</button>
+            </div>
+
+            <div id="secondaryScheduleControlsAboveCalendar" class="mb-4 hidden">
+                <button id="toggleSecondaryStaffInfoButton" type="button" class="mb-3 w-full bg-indigo-500 text-white py-2 px-4 rounded-md hover:bg-indigo-600 transition-colors">顯示組別成員</button>
+                <div id="secondaryStaffInfoDiv" class="text-sm text-slate-600 space-y-1 p-3 bg-slate-50 rounded-md border border-slate-200 hidden"></div>
+                 <p class="text-xs text-slate-500 mt-2">第二班表為自動固定輪替，僅於週末排班。此為基於固定基準日的連續輪替。您可以到「管理設定」中修改組員名單。</p>
+                 <div class="mt-4 text-right">
+                    <button id="exportSecondaryScheduleButton" type="button" onclick="Exporter.exportSecondaryToICS()" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">匯出第二班表 (.ics)</button>
                 </div>
             </div>
 
-            <!-- 未載入書籍提示 -->
-            <div id="noBookMessage" class="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-900 hidden">
-                <p class="text-gray-600 dark:text-gray-400">未載入書籍</p>
-            </div>
-        </div>
+            <div id="calendarGrid" class="grid grid-cols-7 gap-1" aria-labelledby="monthYearDisplay"></div>
 
-        <!-- 底部導航 -->
-        <div class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-3">
-            <div class="flex items-center justify-between">
-                <button id="prevBtn" class="btn btn--secondary" disabled>上一頁</button>
-                <div id="pageInfo" class="text-sm text-gray-600 dark:text-gray-400"></div>
-                <button id="nextBtn" class="btn btn--secondary" disabled>下一頁</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 目錄側邊欄 -->
-    <div id="tocSidebar" class="fixed inset-y-0 left-0 w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform -translate-x-full transition-transform duration-300 z-50">
-        <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="text-lg font-semibold">目錄</h3>
-            <button id="closeToc" class="btn btn--secondary btn--sm">×</button>
-        </div>
-        <div id="tocContent" class="overflow-y-auto h-full pb-16"></div>
-    </div>
-
-    <!-- 書籤側邊欄 -->
-    <div id="bookmarkSidebar" class="fixed inset-y-0 right-0 w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 transform translate-x-full transition-transform duration-300 z-50">
-        <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="text-lg font-semibold">書籤</h3>
-            <button id="closeBookmarks" class="btn btn--secondary btn--sm">×</button>
-        </div>
-        <div class="p-4">
-            <button id="addBookmark" class="btn btn--primary btn--full-width mb-4">新增書籤</button>
-            <div id="bookmarksList" class="space-y-2 overflow-y-auto"></div>
-        </div>
-    </div>
-
-    <!-- 設定面板 -->
-    <div id="settingsPanel" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-lg font-semibold">閱讀器設定</h3>
-                <button id="closeSettings" class="btn btn--secondary btn--sm">×</button>
-            </div>
-            
-            <div class="space-y-4">
-                <!-- 字體選擇 -->
-                <div class="form-group">
-                    <label class="form-label">字體</label>
-                    <select id="fontFamily" class="form-control">
-                        <option value="Inter">Inter (預設)</option>
-                        <option value="Arial">Arial</option>
-                        <option value="Georgia">Georgia</option>
-                        <option value="Times New Roman">Times New Roman</option>
-                        <option value="Verdana">Verdana</option>
-                        <option value="Noto Sans TC">Noto Sans TC (思源黑體)</option>
-                        <option value="Noto Serif TC">Noto Serif TC (思源宋體)</option>
-                    </select>
-                </div>
-
-                <!-- 字體大小 -->
-                <div class="form-group">
-                    <label class="form-label">字體大小</label>
-                    <input type="range" id="fontSize" min="12" max="24" value="16" class="w-full">
-                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        <span id="fontSizeValue">16px</span>
+            <div id="primaryScheduleControls" class="mt-6">
+                <div class="flex flex-col sm:flex-row sm:items-end sm:gap-4">
+                    <div class="flex-grow mb-4 sm:mb-0">
+                        <label for="staffFilterSelect" class="block text-sm font-medium text-slate-700 mb-1">篩選顯示主要班表人員:</label>
+                        <select id="staffFilterSelect" class="w-full p-2 border border-slate-300 rounded-md focus:ring-sky-500 focus:border-sky-500"></select>
+                    </div>
+                    <div class="flex-shrink-0">
+                         <button id="exportPrimaryScheduleButton" type="button" onclick="Exporter.exportToICS()" class="w-full sm:w-auto bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors">匯出主要班表 (.ics)</button>
                     </div>
                 </div>
+            </div>
+        </section>
+    </main>
 
-                <!-- 行距 -->
-                <div class="form-group">
-                    <label class="form-label">行距</label>
-                    <input type="range" id="lineHeight" min="1.2" max="2.5" step="0.1" value="1.6" class="w-full">
-                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        <span id="lineHeightValue">1.6</span>
+    <div id="managementModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="managementModalTitle">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="managementModalTitle" class="text-2xl font-bold text-sky-700">管理設定</h3>
+                <button id="closeManagementModalButton" class="close-button" aria-label="關閉">&times;</button>
+            </div>
+
+            <section class="space-y-4" aria-labelledby="import-section-title">
+                <h2 id="import-section-title" class="text-xl font-bold text-slate-800 mb-4 mt-2 pb-2 border-b-2 border-slate-200">人員與班表匯入</h2>
+
+                <form onsubmit="event.preventDefault(); StaffManager.processStaffNames();">
+                    <div>
+                        <label for="staffNameInput" class="block text-sm font-medium text-slate-700 mb-1">手動新增/管理主要班表人員 (每行一人)</label>
+                        <textarea id="staffNameInput" rows="1" class="w-full p-2 border border-slate-300 rounded-md focus:ring-sky-500 focus:border-sky-500" placeholder="例如：王小明"></textarea>
+                        <button type="submit" class="mt-2 w-full bg-sky-600 text-white py-2 px-4 rounded-md hover:bg-sky-700 transition-colors">處理主要班表名單</button>
                     </div>
-                </div>
+                </form>
 
-                <!-- 邊距 -->
-                <div class="form-group">
-                    <label class="form-label">邊距</label>
-                    <input type="range" id="margin" min="10" max="50" value="20" class="w-full">
-                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        <span id="marginValue">20px</span>
+                <form onsubmit="event.preventDefault(); ScheduleParser.triggerImportScheduleFromPastedText();">
+                    <div>
+                        <label for="fullSchedulePasteArea" class="block text-sm font-medium text-slate-700 mb-1">貼上主要班表文字</label>
+                        <textarea id="fullSchedulePasteArea" rows="2" class="w-full p-2 border border-slate-300 rounded-md focus:ring-sky-500 focus:border-sky-500" placeholder="可貼上包含 'XXX年Y月' 及 '姓名' 與日期標頭的純文字班表。"></textarea>
+                        <button type="submit" class="mt-2 w-full bg-orange-500 text-white py-2 px-4 rounded-md hover:bg-orange-600 transition-colors">匯入貼上之文字 (主要班表)</button>
                     </div>
-                </div>
+                </form>
 
-                <!-- 背景顏色 -->
-                <div class="form-group">
-                    <label class="form-label">背景顏色</label>
-                    <select id="backgroundColor" class="form-control">
-                        <option value="#ffffff">白色</option>
-                        <option value="#f8f9fa">淺灰</option>
-                        <option value="#f5f5dc">米色</option>
-                        <option value="#2d3748">深色</option>
-                        <option value="#1a202c">純黑</option>
-                    </select>
+                <div>
+                   <label for="holidayFileImport" class="block text-sm font-medium text-slate-700 mb-1">匯入假期檔案 (.ics)</label>
+                   <input type="file" id="holidayFileImport" accept=".ics" class="w-full p-2 border border-slate-300 rounded-md focus:ring-sky-500 focus:border-sky-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100">
+                   <button type="button" onclick="HolidayImporter.triggerHolidayImport()" class="mt-2 w-full bg-cyan-600 text-white py-2 px-4 rounded-md hover:bg-cyan-700 transition-colors">匯入假期</button>
                 </div>
+            </section>
 
-                <!-- 文字顏色 -->
-                <div class="form-group">
-                    <label class="form-label">文字顏色</label>
-                    <select id="textColor" class="form-control">
-                        <option value="#1f2937">深色</option>
-                        <option value="#4a5568">中等</option>
-                        <option value="#718096">淺色</option>
-                        <option value="#e2e8f0">淺白</option>
-                        <option value="#ffffff">純白</option>
-                    </select>
+            <hr class="my-8 border-slate-300">
+
+            <section class="space-y-6" aria-labelledby="automation-section-title">
+                <h2 id="automation-section-title" class="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-slate-200">自動化與特殊功能</h2>
+
+                <section aria-labelledby="automation-title-modal">
+                    <h3 id="automation-title-modal" class="text-lg font-semibold mb-3 text-slate-700">主要班表自動化</h3>
+                    <div class="space-y-2">
+                        <button type="button" onclick="AutoScheduler.triggerAutoSchedule()" class="w-full bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 transition-colors">自動產生初步班表 (手動選起始)</button>
+                        <button type="button" onclick="AutoScheduler.carryOverToNextMonth()" class="w-full bg-teal-600 text-white py-2 px-4 rounded-md hover:bg-teal-700 transition-colors">自動預排次月班表 (接續本月)</button>
+                    </div>
+                </section>
+
+                <section aria-labelledby="sentry-schedule-title-modal">
+                    <h3 id="sentry-schedule-title-modal" class="text-lg font-semibold mb-3 text-slate-700">查哨班表設定</h3>
+                    <form id="sentryScheduleForm" onsubmit="event.preventDefault(); SentryScheduler.updateInitialConditionFromForm();">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="sentryStartDate" class="block text-sm font-medium text-slate-700 mb-1">起始日期:</label>
+                                <input type="date" id="sentryStartDate" class="w-full p-2 border border-slate-300 rounded-md focus:ring-rose-500 focus:border-rose-500">
+                            </div>
+                            <div>
+                                <label for="sentryStartTime" class="block text-sm font-medium text-slate-700 mb-1">起始時間:</label>
+                                 <select id="sentryStartTime" class="w-full p-2 border border-slate-300 rounded-md focus:ring-rose-500 focus:border-rose-500"></select>
+                            </div>
+                        </div>
+                        <button type="submit" class="mt-3 w-full bg-rose-500 text-white py-2 px-4 rounded-md hover:bg-rose-600 transition-colors">更新查哨起始條件</button>
+                    </form>
+                    <p class="text-xs text-slate-500 mt-2">此班表依「隔日休、週期重置」規則自動產生，並整合顯示於主要班表中。</p>
+                </section>
+
+                <section aria-labelledby="secondary-schedule-title-modal" class="mt-6 border-t border-slate-200 pt-6">
+                    <h3 id="secondary-schedule-title-modal" class="text-lg font-semibold mb-3 text-slate-700">第二班表 (週末) 設定</h3>
+                    <form id="secondaryScheduleForm" onsubmit="event.preventDefault(); SecondaryScheduler.updateConfigFromForm();">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+                            <div>
+                                <label for="secGroupA" class="block text-sm font-medium text-slate-700 mb-1">A組成員 (逗號或頓號分隔):</label>
+                                <input type="text" id="secGroupA" class="w-full p-2 border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label for="secGroupB" class="block text-sm font-medium text-slate-700 mb-1">B組成員 (逗號或頓號分隔):</label>
+                                <input type="text" id="secGroupB" class="w-full p-2 border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label for="secGroupC" class="block text-sm font-medium text-slate-700 mb-1">C組成員 (逗號或頓號分隔):</label>
+                                <input type="text" id="secGroupC" class="w-full p-2 border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="secAnchorDate" class="block text-sm font-medium text-slate-700 mb-1">基準日期 (錨點):</label>
+                                <input type="date" id="secAnchorDate" class="w-full p-2 border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label for="secAnchorGroup" class="block text-sm font-medium text-slate-700 mb-1">基準日對應組別:</label>
+                                <select id="secAnchorGroup" class="w-full p-2 border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                                    <option value="A">A組</option>
+                                    <option value="B">B組</option>
+                                    <option value="C">C組</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors">更新第二班表設定並重算</button>
+                    </form>
+                    <p class="text-xs text-slate-500 mt-2">修改人員或基準日後，將自動重新計算未來的第二班表週末輪替。</p>
+                </section>
+            </section>
+
+            <hr class="my-8 border-slate-300">
+
+            <section class="space-y-6" aria-labelledby="data-management-section-title">
+                 <h2 id="data-management-section-title" class="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-slate-200">資料管理</h2>
+
+                <section aria-labelledby="primary-schedule-actions-title-modal">
+                    <h3 id="primary-schedule-actions-title-modal" class="text-lg font-semibold mb-3 text-slate-700">儲存、列印與清除</h3>
+                    <div class="space-y-2">
+                        <button id="savePrimaryScheduleButton" type="button" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">儲存所有變更</button>
+                        <button id="printScheduleButton" type="button" class="w-full bg-gray-500 text-white py-2 px-4 rounded-md hover:bg-gray-600 transition-colors flex items-center justify-center"><i class="fas fa-print mr-2"></i>友善列印本月班表</button>
+                        <button id="clearPrimaryScheduleButton" type="button" class="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 transition-colors">清除本月主要班表</button>
+                    </div>
+                </section>
+
+                <div>
+                    <h3 class="text-lg font-semibold mb-3 text-slate-700">主要班表目前人員 (本月):</h3>
+                    <div id="staffList" class="max-h-40 overflow-y-auto p-2 border border-slate-200 rounded-md bg-slate-50">
+                        <p class="text-sm text-slate-500">尚未新增任何主要班表人員。</p>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-2">注意：所有人員名單與班表資料將儲存在您的瀏覽器中。</p>
                 </div>
+            </section>
+        </div>
+    </div>
 
-                <!-- 夜間模式 -->
-                <div class="form-group">
-                    <label class="flex items-center">
-                        <input type="checkbox" id="darkMode" class="mr-2">
-                        夜間模式
-                    </label>
+    <div id="assignmentModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="assignmentModalTitle">
+        <div class="modal-content">
+            <button class="close-button" onclick="UI.closeAssignmentModal()" aria-label="關閉">&times;</button>
+            <h3 id="assignmentModalTitle" class="text-lg font-semibold mb-3">指派主要班表值班人員</h3>
+            <p id="noStaffMessage" class="text-slate-600 hidden">請先在「管理設定」中新增本月份的主要班表人員名單。</p>
+            <div id="modalStaffList" class="space-y-1 max-h-60 overflow-y-auto staff-list-modal"></div>
+            <button id="clearAssignmentButton" type="button" class="mt-4 w-full bg-red-500 text-white py-2 px-3 rounded-md hover:bg-red-600 transition-colors hidden">清除此日主要班表值班</button>
+        </div>
+    </div>
+
+    <div id="autoScheduleConfirmModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="autoScheduleConfirmModalTitle">
+        <div class="modal-content max-h-[80vh] overflow-y-auto">
+            <button class="close-button" onclick="UI.closeAutoScheduleConfirmModal()" aria-label="關閉">&times;</button>
+            <h3 id="autoScheduleConfirmModalTitle" class="text-lg font-semibold mb-3 text-sky-700">確認自動排主要班表</h3>
+            <p id="autoScheduleConfirmMessage" class="text-slate-600 mb-4"></p>
+            <form id="autoScheduleForm" onsubmit="event.preventDefault(); AutoScheduler.proceedWithAutoSchedule(); UI.closeAutoScheduleConfirmModal();">
+                <div class="mb-3">
+                    <label for="startWeekdaySelect" class="block text-sm font-medium text-slate-700 mb-1">〔平日〕起始人員 (週一至週四):</label>
+                    <select id="startWeekdaySelect" class="w-full p-2 border border-slate-300 rounded-md focus:ring-sky-500 focus:border-sky-500"></select>
                 </div>
+                <div class="mb-3">
+                    <label for="startPreHolidaySelect" class="block text-sm font-medium text-slate-700 mb-1">〔假日前一日〕起始人員 (週五):</label>
+                    <select id="startPreHolidaySelect" class="w-full p-2 border border-slate-300 rounded-md focus:ring-sky-500 focus:border-sky-500"></select>
+                </div>
+                <div class="mb-4">
+                    <label for="startHolidaySelect" class="block text-sm font-medium text-slate-700 mb-1">〔假日〕起始人員 (週六、日):</label>
+                    <select id="startHolidaySelect" class="w-full p-2 border border-slate-300 rounded-md focus:ring-sky-500 focus:border-sky-500"></select>
+                </div>
+                <div class="flex justify-end space-x-3 mt-4">
+                    <button type="button" onclick="UI.closeAutoScheduleConfirmModal()" class="bg-slate-300 hover:bg-slate-400 text-slate-800 py-2 px-4 rounded-md transition-colors">取消</button>
+                    <button id="confirmAutoScheduleButton" type="submit" class="bg-sky-600 text-white py-2 px-4 rounded-md hover:bg-sky-700 transition-colors">確定執行</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
-                <!-- 重置按鈕 -->
-                <button id="resetSettings" class="btn btn--outline btn--full-width">重置設定</button>
+    <div id="confirmModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="confirmModalTitle" class="text-xl font-bold text-red-700 flex items-center"><i class="fas fa-exclamation-triangle mr-2"></i><span></span></h3>
+                <button id="closeConfirmModalButton" class="close-button" aria-label="關閉">&times;</button>
+            </div>
+            <p id="confirmModalMessage" class="text-slate-600 mb-6"></p>
+            <div class="flex justify-end space-x-3">
+                <button id="cancelConfirmButton" type="button" class="bg-slate-200 hover:bg-slate-300 text-slate-800 py-2 px-4 rounded-md transition-colors">取消</button>
+                <button id="acceptConfirmButton" type="button" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 transition-colors">確認清除</button>
             </div>
         </div>
     </div>
 
-    <!-- 遮罩層 -->
-    <div id="overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden"></div>
+    <script>
+    // 主要應用程式狀態管理物件
+    let AppState = {
+        currentYear: new Date().getFullYear(),
+        currentMonth: new Date().getMonth(),
+        activeView: 'primary',
+        // 已將 "Bao融" 移除
+        defaultStaffNames: ["學翰", "志龍", "國維", "靖興", "宜君", "欣諭", "耀恩"],
+        staffNames: [],
+        shifts: {},
+        notes: '',
+        staffColors: {},
+        selectedDateForAssignment: null,
+        selectedStaffForFilter: "ALL",
+        holidays: {},
+        secondarySchedule: {
+            staff: ["劉學翰", "廖志龍", "張靖興"],
+            groupDefinitions: [
+                { name: "A", members: ["劉學翰", "廖志龍"], color: { background: '#FFEBEE', text: '#C62828' } },
+                { name: "B", members: ["張靖興", "劉學翰"], color: { background: '#E3F2FD', text: '#1565C0' } },
+                { name: "C", members: ["廖志龍", "張靖興"], color: { background: '#E8F5E9', text: '#2E7D32' } }
+            ],
+            anchor: { date: '2025-05-31', groupName: 'B' },
+            shifts: {},
+            isStaffInfoVisible: false
+        },
+        sentrySchedule: {
+            shifts: {},
+            initialCondition: {
+                date: "2025-10-01",
+                time: "18:00-20:00"
+            },
+            config: {
+                resetTime: "06:00-08:00",
+                restartTime: "08:00-10:00",
+                shiftDurationHours: 2,
+                restDayLabel: "休"
+            },
+            timeSlots: [
+                "00:00-02:00", "02:00-04:00", "04:00-06:00", "06:00-08:00", 
+                "08:00-10:00", "10:00-12:00", "12:00-14:00", "14:00-16:00",
+                "16:00-18:00", "18:00-20:00", "20:00-22:00", "22:00-00:00"
+            ]
+        }
+    };
 
-    <script src="app.js"></script>
+    const PREDEFINED_COLORS = [
+        { background: '#FFADAD', text: '#A50000' }, { background: '#FFD6A5', text: '#A54700' },
+        { background: '#FDFFB6', text: '#6F7300' }, { background: '#CAFFBF', text: '#1E5E2F' },
+        { background: '#9BF6FF', text: '#005F6B' }, { background: '#A0C4FF', text: '#0D3C8C' },
+        { background: '#BDB2FF', text: '#3A1E93' }, { background: '#FFC6FF', text: '#7A006F' }
+    ];
+
+    const UIElements = {
+        mainTitle: null,
+        monthYearDisplay: null, calendarGrid: null, staffNameInput: null,
+        fullSchedulePasteArea: null, staffListDiv: null,
+        assignmentModal: null, modalStaffList: null, clearAssignmentButton: null,
+        noStaffMessage: null, customAlertBox: null,
+        customAlertMessageBox: null,
+        staffFilterSelect: null,
+        autoScheduleConfirmModal: null, autoScheduleConfirmMessage: null, confirmAutoScheduleButton: null,
+        startWeekdaySelect: null, startPreHolidaySelect: null, startHolidaySelect: null,
+        primaryScheduleTabButton: null, secondaryScheduleTabButton: null,
+        primaryScheduleControls: null,
+        secondaryScheduleControlsAboveCalendar: null,
+        secondaryStaffInfoDiv: null,
+        toggleSecondaryStaffInfoButton: null,
+        exportPrimaryScheduleButton: null,
+        exportSecondaryScheduleButton: null,
+        savePrimaryScheduleButton: null,
+        clearPrimaryScheduleButton: null,
+        managementModal: null,
+        openManagementModalButton: null,
+        closeManagementModalButton: null,
+        sentryStartDate: null,
+        sentryStartTime: null,
+        secGroupA: null, secGroupB: null, secGroupC: null, secAnchorDate: null, secAnchorGroup: null,
+        confirmModal: null, confirmModalTitle: null, confirmModalMessage: null,
+        acceptConfirmButton: null, cancelConfirmButton: null, closeConfirmModalButton: null,
+        printScheduleButton: null,
+    };
+
+    const Utils = {
+        showCustomAlert: (message, type = 'error', duration = 3500) => {
+            if (!UIElements.customAlertBox || !UIElements.customAlertMessageBox) return;
+            UIElements.customAlertMessageBox.textContent = message;
+            UIElements.customAlertBox.className = 'custom-alert';
+            UIElements.customAlertBox.classList.add(type);
+            UIElements.customAlertBox.style.display = 'block';
+            if (duration > 0) {
+                setTimeout(() => { if(UIElements.customAlertBox) UIElements.customAlertBox.style.display = 'none'; }, duration);
+            }
+        },
+        hideCustomAlert: () => {
+            if (UIElements.customAlertBox) UIElements.customAlertBox.style.display = 'none';
+        },
+        getLocalStorageKey: (dataType) => {
+            const version = "v8.3_weekday_holiday_rule";
+            if (['holidays_all', 'secondary_shifts', 'secondary_schedule_config', 'sentry_shifts', 'sentry_initial_condition'].includes(dataType)){
+                return `shiftSchedule_${version}_${dataType}`;
+            }
+            const year = AppState.currentYear;
+            const month = AppState.currentMonth;
+            return `shiftSchedule_${version}_${dataType}_${year}_${String(month + 1).padStart(2, '0')}`;
+        },
+        formatDateToKey: (dateObj) => {
+            if (!dateObj) return null;
+            const year = dateObj.getUTCFullYear();
+            const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getUTCDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+    };
+
+    const DataStorage = {
+        loadData: () => {
+            try {
+                const staffData = localStorage.getItem(Utils.getLocalStorageKey('staff'));
+                AppState.staffNames = staffData ? JSON.parse(staffData) : [...AppState.defaultStaffNames];
+                if (AppState.staffNames.length === 0 && AppState.defaultStaffNames.length > 0) AppState.staffNames = [...AppState.defaultStaffNames];
+                const shiftsData = localStorage.getItem(Utils.getLocalStorageKey('shifts'));
+                AppState.shifts = shiftsData ? JSON.parse(shiftsData) : {};
+                
+                // 一次性升級遷移：強制從舊資料中移除 Bao融
+                if (!localStorage.getItem('shifttool_bao_removed_v8_4')) {
+                    AppState.staffNames = AppState.staffNames.filter(name => name !== "Bao融");
+                    for (let key in AppState.shifts) {
+                        if (AppState.shifts[key] === "Bao融") {
+                            delete AppState.shifts[key];
+                        }
+                    }
+                    localStorage.setItem('shifttool_bao_removed_v8_4', 'true');
+                }
+
+                const notesData = localStorage.getItem(Utils.getLocalStorageKey('notes'));
+                AppState.notes = notesData ? notesData : '';
+                const staffColorsData = localStorage.getItem(Utils.getLocalStorageKey('staffColors'));
+                AppState.staffColors = staffColorsData ? JSON.parse(staffColorsData) : {};
+                StaffManager.assignColorsToStaff();
+                const holidaysData = localStorage.getItem(Utils.getLocalStorageKey('holidays_all'));
+                AppState.holidays = holidaysData ? JSON.parse(holidaysData) : {};
+                
+                // 讀取第二班表自訂設定
+                const secConfigData = localStorage.getItem(Utils.getLocalStorageKey('secondary_schedule_config'));
+                if (secConfigData) {
+                    const parsedConfig = JSON.parse(secConfigData);
+                    AppState.secondarySchedule.groupDefinitions = parsedConfig.groupDefinitions || AppState.secondarySchedule.groupDefinitions;
+                    AppState.secondarySchedule.anchor = parsedConfig.anchor || AppState.secondarySchedule.anchor;
+                    AppState.secondarySchedule.staff = parsedConfig.staff || AppState.secondarySchedule.staff;
+                }
+
+                const secondaryShiftsData = localStorage.getItem(Utils.getLocalStorageKey('secondary_shifts'));
+                AppState.secondarySchedule.shifts = secondaryShiftsData ? JSON.parse(secondaryShiftsData) : {};
+                const sentryShiftsData = localStorage.getItem(Utils.getLocalStorageKey('sentry_shifts'));
+                AppState.sentrySchedule.shifts = sentryShiftsData ? JSON.parse(sentryShiftsData) : {};
+                const sentryInitialData = localStorage.getItem(Utils.getLocalStorageKey('sentry_initial_condition'));
+                if(sentryInitialData) AppState.sentrySchedule.initialCondition = JSON.parse(sentryInitialData);
+            } catch (e) {
+                console.error("從 localStorage 讀取資料時發生錯誤:", e);
+                Utils.showCustomAlert("讀取儲存資料時發生錯誤。", "error");
+            }
+        },
+        saveData: () => {
+            try {
+                localStorage.setItem(Utils.getLocalStorageKey('staff'), JSON.stringify(AppState.staffNames));
+                localStorage.setItem(Utils.getLocalStorageKey('shifts'), JSON.stringify(AppState.shifts));
+                localStorage.setItem(Utils.getLocalStorageKey('notes'), AppState.notes);
+                localStorage.setItem(Utils.getLocalStorageKey('staffColors'), JSON.stringify(AppState.staffColors));
+                localStorage.setItem(Utils.getLocalStorageKey('holidays_all'), JSON.stringify(AppState.holidays));
+                localStorage.setItem(Utils.getLocalStorageKey('secondary_shifts'), JSON.stringify(AppState.secondarySchedule.shifts));
+                
+                // 儲存第二班表自訂設定
+                localStorage.setItem(Utils.getLocalStorageKey('secondary_schedule_config'), JSON.stringify({
+                    groupDefinitions: AppState.secondarySchedule.groupDefinitions,
+                    anchor: AppState.secondarySchedule.anchor,
+                    staff: AppState.secondarySchedule.staff
+                }));
+
+                localStorage.setItem(Utils.getLocalStorageKey('sentry_shifts'), JSON.stringify(AppState.sentrySchedule.shifts));
+                localStorage.setItem(Utils.getLocalStorageKey('sentry_initial_condition'), JSON.stringify(AppState.sentrySchedule.initialCondition));
+            } catch (e) {
+                console.error("儲存資料到 localStorage 時發生錯誤:", e);
+                Utils.showCustomAlert("儲存資料時發生錯誤，可能是儲存空間已滿。", "error");
+            }
+        },
+        clearCurrentMonthPrimarySchedule: () => {
+            const currentMonthPrefix = `${AppState.currentYear}-${String(AppState.currentMonth + 1).padStart(2, '0')}`;
+            let shiftsClearedCount = 0;
+            for (const dateKey in AppState.shifts) {
+                if (dateKey.startsWith(currentMonthPrefix)) {
+                    delete AppState.shifts[dateKey];
+                    shiftsClearedCount++;
+                }
+            }
+            AppState.notes = "";
+            DataStorage.saveData();
+            Calendar.render();
+            if (shiftsClearedCount > 0 || AppState.notes === "") {
+                 Utils.showCustomAlert(`已清除 ${AppState.currentYear}年 ${AppState.currentMonth + 1}月 的主要班表資料與備註。`, "success");
+            } else {
+                 Utils.showCustomAlert(`${AppState.currentYear}年 ${AppState.currentMonth + 1}月 的主要班表無資料可清除。`, "info");
+            }
+        }
+    };
+
+    const HolidayImporter = {
+        parseICS: (icsContent) => {
+            const lines = icsContent.split(/\r\n|\n|\r/);
+            let inEvent = false;
+            let currentEvent = { DTSTART_val: null, DTEND_val: null, SUMMARY_val: null };
+            let newHolidays = {};
+            const parseDateFromICSLine = (line) => {
+                if (!line) return null;
+                const dateStrPart = line.substring(line.indexOf(':') + 1);
+                const actualDateStr = dateStrPart.includes('VALUE=DATE:') ? dateStrPart.substring('VALUE=DATE:'.length) : dateStrPart;
+                if (actualDateStr.length < 8) return null;
+                const year = parseInt(actualDateStr.substring(0, 4));
+                const month = parseInt(actualDateStr.substring(4, 6)) - 1;
+                const day = parseInt(actualDateStr.substring(6, 8));
+                if (isNaN(year) || isNaN(month) || isNaN(day) || month < 0 || month > 11 || day < 1 || day > 31) {
+                     return null;
+                }
+                return new Date(Date.UTC(year, month, day));
+            };
+
+            for (const line of lines) {
+                if (line.toUpperCase().startsWith('BEGIN:VEVENT')) {
+                    inEvent = true;
+                    currentEvent = { DTSTART_val: null, DTEND_val: null, SUMMARY_val: null };
+                } else if (line.toUpperCase().startsWith('END:VEVENT')) {
+                    if (inEvent && currentEvent.DTSTART_val && currentEvent.SUMMARY_val) {
+                        let startDate = currentEvent.DTSTART_val;
+                        let endDate = currentEvent.DTEND_val;
+                        if (!endDate || endDate.getTime() <= startDate.getTime()) {
+                            const formattedDate = Utils.formatDateToKey(startDate);
+                            if (formattedDate) newHolidays[formattedDate] = currentEvent.SUMMARY_val;
+                        } else {
+                            let currentDate = new Date(startDate.getTime());
+                            while (currentDate.getTime() < endDate.getTime()) {
+                                const formattedDate = Utils.formatDateToKey(currentDate);
+                                if (formattedDate) newHolidays[formattedDate] = currentEvent.SUMMARY_val;
+                                currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+                            }
+                        }
+                    }
+                    inEvent = false;
+                } else if (inEvent) {
+                    if (line.toUpperCase().startsWith('DTSTART')) {
+                        currentEvent.DTSTART_val = parseDateFromICSLine(line);
+                    } else if (line.toUpperCase().startsWith('DTEND')) {
+                        currentEvent.DTEND_val = parseDateFromICSLine(line);
+                    } else if (line.toUpperCase().startsWith('SUMMARY')) {
+                        currentEvent.SUMMARY_val = line.substring(line.indexOf(':') + 1).trim();
+                    }
+                }
+            }
+            return newHolidays;
+        },
+        triggerHolidayImport: () => {
+            const fileInput = document.getElementById('holidayFileImport');
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                Utils.showCustomAlert("請先選擇一個 .ics 假期檔案。", "info");
+                return;
+            }
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const importedHolidays = HolidayImporter.parseICS(e.target.result);
+                    if (Object.keys(importedHolidays).length > 0) {
+                        AppState.holidays = { ...AppState.holidays, ...importedHolidays };
+                        DataStorage.saveData();
+                        Calendar.render();
+                        Utils.showCustomAlert(`成功匯入 ${Object.keys(importedHolidays).length} 個假期。`, "success");
+                        fileInput.value = "";
+                    } else {
+                        Utils.showCustomAlert("未在檔案中找到有效的假期事件。", "info");
+                        fileInput.value = "";
+                    }
+                } catch (err) {
+                    console.error("解析假期檔案時發生錯誤:", err);
+                    Utils.showCustomAlert("解析假期檔案時發生錯誤。", "error");
+                    fileInput.value = "";
+                }
+            };
+            reader.onerror = () => {
+                Utils.showCustomAlert("讀取假期檔案時發生錯誤。", "error");
+                fileInput.value = "";
+            };
+            reader.readAsText(file);
+        }
+    };
+
+    const SecondaryScheduler = {
+        getGroupForWeekend: (saturdayDateStr) => {
+            const { groupDefinitions, anchor } = AppState.secondarySchedule;
+            const numGroups = groupDefinitions.length;
+            if (numGroups === 0) return null;
+
+            const anchorGroupIndex = groupDefinitions.findIndex(g => g.name === anchor.groupName);
+            if (anchorGroupIndex === -1) {
+                console.error("Anchor group not found in definitions.");
+                return groupDefinitions[0];
+            }
+
+            const anchorDate = new Date(anchor.date + 'T00:00:00Z');
+            const targetSaturday = new Date(saturdayDateStr + 'T00:00:00Z');
+
+            const diffInMs = targetSaturday.getTime() - anchorDate.getTime();
+            const diffInWeeks = Math.round(diffInMs / (1000 * 60 * 60 * 24 * 7));
+
+            const finalGroupIndex = (anchorGroupIndex + diffInWeeks % numGroups + numGroups) % numGroups;
+
+            return groupDefinitions[finalGroupIndex];
+        },
+        ensureScheduleForCurrentMonth: () => {
+            const year = AppState.currentYear;
+            const month_0_indexed = AppState.currentMonth;
+            const daysInMonth = new Date(year, month_0_indexed + 1, 0).getDate();
+            const currentMonthKey = `${year}-${String(month_0_indexed + 1).padStart(2, '0')}`;
+            let needsSave = false;
+
+            const shiftsToDelete = [];
+            for (const dateKey in AppState.secondarySchedule.shifts) {
+                if (dateKey.startsWith(currentMonthKey)) {
+                    shiftsToDelete.push(dateKey);
+                }
+            }
+            shiftsToDelete.forEach(key => delete AppState.secondarySchedule.shifts[key]);
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const currentDate = new Date(year, month_0_indexed, day);
+                const dayOfWeek = currentDate.getDay();
+                const utcDate = new Date(Date.UTC(year, month_0_indexed, day));
+                const dateStr = Utils.formatDateToKey(utcDate);
+
+                if (AppState.secondarySchedule.shifts[dateStr]) continue;
+
+                if (dayOfWeek === 6) {
+                    const weekendGroup = SecondaryScheduler.getGroupForWeekend(dateStr);
+                    if (weekendGroup) {
+                        AppState.secondarySchedule.shifts[dateStr] = weekendGroup.name;
+                        needsSave = true;
+
+                        if (day + 1 <= daysInMonth) {
+                            const sundayUtcDate = new Date(Date.UTC(year, month_0_indexed, day + 1));
+                            AppState.secondarySchedule.shifts[Utils.formatDateToKey(sundayUtcDate)] = weekendGroup.name;
+                        }
+                    }
+                } else if (dayOfWeek === 0) {
+                    const prevDayUtc = new Date(utcDate.getTime() - (24 * 60 * 60 * 1000));
+                    const prevDayDateStr = Utils.formatDateToKey(prevDayUtc);
+                    const weekendGroup = SecondaryScheduler.getGroupForWeekend(prevDayDateStr);
+                    if (weekendGroup) {
+                        AppState.secondarySchedule.shifts[dateStr] = weekendGroup.name;
+                        needsSave = true;
+                    }
+                }
+            }
+            if (needsSave) { DataStorage.saveData(); }
+        },
+        updateConfigFromForm: () => {
+            const groupA = UIElements.secGroupA.value.split(/[,、]/).map(s => s.trim()).filter(s => s);
+            const groupB = UIElements.secGroupB.value.split(/[,、]/).map(s => s.trim()).filter(s => s);
+            const groupC = UIElements.secGroupC.value.split(/[,、]/).map(s => s.trim()).filter(s => s);
+            const anchorDate = UIElements.secAnchorDate.value;
+            const anchorGroup = UIElements.secAnchorGroup.value;
+
+            if (!anchorDate) {
+                Utils.showCustomAlert("請選擇有效的基準日期。", "info");
+                return;
+            }
+
+            AppState.secondarySchedule.groupDefinitions[0].members = groupA;
+            AppState.secondarySchedule.groupDefinitions[1].members = groupB;
+            AppState.secondarySchedule.groupDefinitions[2].members = groupC;
+            AppState.secondarySchedule.anchor = { date: anchorDate, groupName: anchorGroup };
+
+            const allStaff = new Set([...groupA, ...groupB, ...groupC]);
+            AppState.secondarySchedule.staff = Array.from(allStaff);
+
+            // 清除現有的所有第二班表資料，強制依新設定重建
+            AppState.secondarySchedule.shifts = {};
+            DataStorage.saveData();
+
+            UI.updateSecondaryStaffInfoUI();
+            SecondaryScheduler.ensureScheduleForCurrentMonth();
+            Calendar.render();
+            Utils.showCustomAlert("第二班表設定已更新！", "success");
+            UI.closeManagementModal();
+        }
+    };
+
+    const SentryScheduler = {
+        recalculateAll: () => {
+            Utils.showCustomAlert("正在重算查哨班表...", "loading", 0);
+
+            AppState.sentrySchedule.shifts = {};
+            const { initialCondition, config, timeSlots } = AppState.sentrySchedule;
+
+            if (!initialCondition.date || !initialCondition.time) {
+                Utils.showCustomAlert("查哨班表缺少有效的起始條件。", "error");
+                return;
+            }
+
+            let currentDate = new Date(initialCondition.date + 'T00:00:00Z');
+            currentDate.setUTCHours(0,0,0,0);
+            let currentTimeSlot = initialCondition.time;
+
+            const endDate = new Date(new Date().getFullYear() + 5, 11, 31);
+
+            while (currentDate <= endDate) {
+                const dateKey = Utils.formatDateToKey(currentDate);
+                AppState.sentrySchedule.shifts[dateKey] = currentTimeSlot;
+
+                if (currentTimeSlot === config.resetTime) {
+                    currentDate.setUTCDate(currentDate.getUTCDate() + 2);
+                    currentTimeSlot = config.restartTime;
+                } else {
+                    const currentIndex = timeSlots.indexOf(currentTimeSlot);
+                    const nextIndex = (currentIndex + 1) % timeSlots.length;
+                    currentTimeSlot = timeSlots[nextIndex];
+                    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+                }
+            }
+
+            DataStorage.saveData();
+            Utils.hideCustomAlert();
+            Utils.showCustomAlert("查哨班表已重算完畢。", "success");
+            if (AppState.activeView === 'primary') Calendar.render();
+        },
+        updateInitialConditionFromForm: () => {
+            const startDate = UIElements.sentryStartDate.value;
+            const startTime = UIElements.sentryStartTime.value;
+
+            if (!startDate || !startTime) {
+                Utils.showCustomAlert("請選擇有效的起始日期和時間。", "info");
+                return;
+            }
+
+            AppState.sentrySchedule.initialCondition = {
+                date: startDate,
+                time: startTime
+            };
+
+            SentryScheduler.recalculateAll();
+            UI.closeManagementModal();
+        }
+    };
+
+    const StaffManager = {
+        assignColorsToStaff: () => {
+            const newStaffColors = {};
+            let localNextColorIndex = 0;
+            AppState.staffNames.forEach(name => {
+                if (AppState.staffColors && AppState.staffColors[name]) {
+                    newStaffColors[name] = AppState.staffColors[name];
+                }
+            });
+            const usedBackgroundColors = new Set(Object.values(newStaffColors).map(color => color.background));
+            AppState.staffNames.forEach(name => {
+                if (!newStaffColors[name]) {
+                    let assigned = false;
+                    for (let i = 0; i < PREDEFINED_COLORS.length; i++) {
+                        const colorCandidate = PREDEFINED_COLORS[(localNextColorIndex + i) % PREDEFINED_COLORS.length];
+                        if (!usedBackgroundColors.has(colorCandidate.background)) {
+                            newStaffColors[name] = colorCandidate;
+                            usedBackgroundColors.add(colorCandidate.background);
+                            assigned = true;
+                            break;
+                        }
+                    }
+                    if (!assigned) {
+                        newStaffColors[name] = PREDEFINED_COLORS[localNextColorIndex % PREDEFINED_COLORS.length];
+                    }
+                    localNextColorIndex++;
+                }
+            });
+            AppState.staffColors = newStaffColors;
+        },
+        processStaffNames: () => {
+            if (!UIElements.staffNameInput) return;
+            const namesText = UIElements.staffNameInput.value.trim();
+            if (namesText) {
+                const newStaff = namesText.split('\n').map(name => name.trim()).filter(name => name);
+                if (newStaff.length > 0) {
+                    AppState.staffNames = Array.from(new Set([...AppState.staffNames, ...newStaff]));
+                    StaffManager.assignColorsToStaff();
+                    UI.updateStaffListUI();
+                    UI.updateStaffFilterUI();
+                    DataStorage.saveData();
+                    UIElements.staffNameInput.value = '';
+                    Utils.showCustomAlert("主要班表人員名單已更新。", "success");
+                } else {
+                    Utils.showCustomAlert("請輸入有效的主要班表人員名單。", "error");
+                }
+            } else {
+                 Utils.showCustomAlert("主要班表人員名單輸入框為空，未做更改。", "info");
+            }
+        },
+        removeStaffMember: (indexToRemove) => {
+            const removedName = AppState.staffNames[indexToRemove];
+            AppState.staffNames.splice(indexToRemove, 1);
+            delete AppState.staffColors[removedName];
+            const currentMonthPrefix = `${AppState.currentYear}-${String(AppState.currentMonth + 1).padStart(2, '0')}`;
+            for (const date in AppState.shifts) {
+                if (AppState.shifts.hasOwnProperty(date) && date.startsWith(currentMonthPrefix)) {
+                     if (AppState.shifts[date] === removedName) {
+                        delete AppState.shifts[date];
+                    }
+                }
+            }
+            if (AppState.selectedStaffForFilter === removedName) {
+                AppState.selectedStaffForFilter = "ALL";
+            }
+            UI.updateStaffListUI();
+            UI.updateStaffFilterUI();
+            Calendar.render();
+            DataStorage.saveData();
+            Utils.showCustomAlert(`${removedName} 已從主要班表移除，其在本月的相關班次已清除。`, "success");
+        }
+    };
+
+    const Calendar = {
+        render: () => {
+            if (!UIElements.monthYearDisplay || !UIElements.calendarGrid) return;
+            UIElements.calendarGrid.innerHTML = '';
+
+            SecondaryScheduler.ensureScheduleForCurrentMonth();
+
+            const today = new Date();
+            const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+            const firstDayOfMonth = new Date(AppState.currentYear, AppState.currentMonth, 1);
+            const lastDayOfMonth = new Date(AppState.currentYear, AppState.currentMonth + 1, 0);
+            const daysInMonth = lastDayOfMonth.getDate();
+            const dayOfWeek = firstDayOfMonth.getDay();
+            UIElements.monthYearDisplay.textContent = `${AppState.currentYear}年 ${AppState.currentMonth + 1}月`;
+            const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+            dayNames.forEach(name => {
+                const dayHeader = document.createElement('div');
+                dayHeader.className = 'text-center font-semibold text-sm py-2 bg-slate-100 rounded-t-md';
+                dayHeader.textContent = name;
+                UIElements.calendarGrid.appendChild(dayHeader);
+            });
+            for (let i = 0; i < dayOfWeek; i++) {
+                const blankCell = document.createElement('div');
+                blankCell.className = 'calendar-day bg-slate-50 rounded-md';
+                UIElements.calendarGrid.appendChild(blankCell);
+            }
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayCell = document.createElement('div');
+                const dateStr = `${AppState.currentYear}-${String(AppState.currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const currentDate = new Date(AppState.currentYear, AppState.currentMonth, day);
+                const currentDayOfWeek = currentDate.getDay();
+                const isWeekend = currentDayOfWeek === 0 || currentDayOfWeek === 6;
+                const holidayName = AppState.holidays[dateStr];
+
+                dayCell.className = 'calendar-day p-2 rounded-md';
+                if (AppState.activeView === 'primary') dayCell.classList.add('cursor-pointer');
+                dayCell.dataset.date = dateStr;
+
+                if (dateStr === todayStr) {
+                    dayCell.classList.add('today');
+                }
+                if (dateStr === AppState.selectedDateForAssignment) {
+                    dayCell.classList.add('selected-day');
+                }
+
+                const dayHeader = document.createElement('div');
+                dayHeader.className = 'flex justify-between items-start w-full';
+
+                const dayNumber = document.createElement('span');
+                dayNumber.className = 'text-sm font-medium';
+                dayNumber.textContent = day;
+
+                if ((isWeekend || holidayName) && !dayCell.classList.contains('filtered-out')) {
+                    dayNumber.classList.add('font-bold', 'text-red-700');
+                }
+                dayHeader.appendChild(dayNumber);
+
+                if (AppState.activeView === 'primary' && isWeekend && !holidayName) {
+                    const secondaryShiftGroupName = AppState.secondarySchedule.shifts[dateStr];
+                    if (secondaryShiftGroupName) {
+                        const indicator = document.createElement('span');
+                        indicator.className = 'secondary-indicator-inline';
+                        indicator.textContent = secondaryShiftGroupName; 
+                        dayHeader.appendChild(indicator);
+                    }
+                }
+                dayCell.appendChild(dayHeader);
+
+                const contentWrapper = document.createElement('div');
+                contentWrapper.className = 'day-content-wrapper';
+
+                if (AppState.activeView === 'primary') {
+                    dayCell.addEventListener('click', () => UI.openAssignmentModal(dateStr));
+
+                    const primaryShiftCell = document.createElement('div');
+                    primaryShiftCell.className = 'primary-shift-person';
+                    const sentryCell = document.createElement('div');
+                    sentryCell.className = 'sentry-shift-note text-rose-700';
+                    const holidayCell = document.createElement('div');
+                    holidayCell.className = 'holiday-info text-red-600 font-semibold';
+
+                    const primaryShiftPersonName = AppState.shifts[dateStr];
+                    if (primaryShiftPersonName) {
+                         if (AppState.selectedStaffForFilter === "ALL" || AppState.selectedStaffForFilter === primaryShiftPersonName) {
+                            const personColor = AppState.staffColors[primaryShiftPersonName] || { background: '#E0E0E0', text: '#000000' };
+                            const personSpan = document.createElement('span');
+                            personSpan.className = 'assigned-person';
+                            personSpan.textContent = primaryShiftPersonName.charAt(0);
+                            personSpan.title = primaryShiftPersonName;
+                            personSpan.style.backgroundColor = personColor.background;
+                            personSpan.style.color = personColor.text;
+                            personSpan.style.border = `1px solid ${personColor.text}`;
+                            primaryShiftCell.appendChild(personSpan);
+                        } else {
+                            dayCell.classList.add('filtered-out');
+                        }
+                    } else {
+                        if (AppState.selectedStaffForFilter !== "ALL") dayCell.classList.add('filtered-out');
+                    }
+
+                    const sentryShiftTime = AppState.sentrySchedule.shifts[dateStr];
+                    if (sentryShiftTime && sentryShiftTime !== AppState.sentrySchedule.config.restDayLabel) {
+                        sentryCell.innerHTML = `<i class="fas fa-search-location fa-fw mr-1"></i> ${sentryShiftTime.substring(0, 2)}`;
+                    }
+
+                    if(holidayName){
+                        holidayCell.textContent = holidayName.charAt(0);
+                        holidayCell.title = holidayName;
+                    }
+
+                    contentWrapper.appendChild(primaryShiftCell);
+                    contentWrapper.appendChild(sentryCell);
+                    contentWrapper.appendChild(holidayCell);
+
+                } else if (AppState.activeView === 'secondary') {
+                    if (isWeekend && !holidayName) {
+                        const secondaryShiftGroupName = AppState.secondarySchedule.shifts[dateStr];
+                        if (secondaryShiftGroupName) {
+                            const groupInfo = AppState.secondarySchedule.groupDefinitions.find(g => g.name === secondaryShiftGroupName);
+                            if (groupInfo) {
+                                const groupSpan = document.createElement('span');
+                                groupSpan.className = 'assigned-group text-lg';
+                                groupSpan.textContent = groupInfo.name;
+                                groupSpan.style.backgroundColor = groupInfo.color.background;
+                                groupSpan.style.color = groupInfo.color.text;
+                                groupSpan.style.borderColor = groupInfo.color.text;
+                                contentWrapper.appendChild(groupSpan);
+                            }
+                        }
+                    }
+                }
+
+                dayCell.appendChild(contentWrapper);
+                UIElements.calendarGrid.appendChild(dayCell);
+            }
+            const totalCells = dayOfWeek + daysInMonth;
+            const remainingCells = (7 - (totalCells % 7)) % 7;
+            for (let i = 0; i < remainingCells; i++) {
+                const blankCell = document.createElement('div');
+                blankCell.className = 'calendar-day bg-slate-50 rounded-md';
+                UIElements.calendarGrid.appendChild(blankCell);
+            }
+        },
+        changeMonth: (offset) => {
+            DataStorage.saveData();
+            AppState.currentMonth += offset;
+            if (AppState.currentMonth < 0) {
+                AppState.currentMonth = 11;
+                AppState.currentYear--;
+            } else if (AppState.currentMonth > 11) {
+                AppState.currentMonth = 0;
+                AppState.currentYear++;
+            }
+            DataStorage.loadData();
+            UI.updateAllUI();
+            Calendar.render();
+        }
+    };
+
+    const ScheduleParser = {
+        parseTextToIntermediateData: (text, inputYear, inputMonth_1_indexed) => {
+            const lines = text.split('\n').map(line => line.trimEnd());
+            let yearToUse = inputYear;
+            let monthToUse_0_indexed = inputMonth_1_indexed !== null ? inputMonth_1_indexed - 1 : null;
+            let tempStaffNames = new Set();
+            let tempShifts = {};
+            let tempNotesFromParser = "";
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const yearMonthMatch = line.match(/(\d+)\s*年\s*(\d+)\s*月/);
+                if (yearMonthMatch) {
+                    let parsedYearFromText = parseInt(yearMonthMatch[1]);
+                    if (parsedYearFromText < 200 && parsedYearFromText > 90) parsedYearFromText += 1911;
+                    yearToUse = parsedYearFromText;
+                    monthToUse_0_indexed = parseInt(yearMonthMatch[2]) - 1;
+                    break;
+                }
+            }
+            if (yearToUse === null || yearToUse === undefined || isNaN(yearToUse)) yearToUse = AppState.currentYear;
+            if (monthToUse_0_indexed === null || monthToUse_0_indexed === undefined || isNaN(monthToUse_0_indexed)) monthToUse_0_indexed = AppState.currentMonth;
+            let dateHeaderLineIndex = -1;
+            let datePositions = {};
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                if (line.includes("姓名") && /\d/.test(line)) {
+                    dateHeaderLineIndex = i;
+                    const dayRegex = /\b(\d{1,2})\b/g;
+                    let match;
+                    while ((match = dayRegex.exec(line)) !== null) {
+                        datePositions[parseInt(match[1])] = match.index + Math.floor(match[1].length / 2);
+                    }
+                    break;
+                }
+            }
+            let tableParseYieldedData = false;
+            if (Object.keys(datePositions).length > 0) {
+                for (let i = dateHeaderLineIndex + 1; i < lines.length; i++) {
+                    const line = lines[i];
+                    if (line.trim() === "") continue;
+                    if (line.match(/^\s*\d+月/) || line.includes("平日") || line.includes("假日") || line.includes("最後") || line.includes("備註")) {
+                        if (!tempNotesFromParser) tempNotesFromParser = line.trim(); else tempNotesFromParser += "\n" + line.trim();
+                        continue;
+                    }
+                    const nameMatch = line.match(/^([^\s值日一二三四五六0-9]+(?:\s+[^\s值日一二三四五六0-9]+)*)/);
+                    let staffName = "";
+                    if (nameMatch && nameMatch[0].length > 0 && nameMatch[0].length < 10) {
+                        staffName = nameMatch[0].trim();
+                    } else {
+                        if (line.length > 30 && !line.includes("值") && !tempNotesFromParser.includes(line.trim())) {
+                             if (!tempNotesFromParser) tempNotesFromParser = line.trim(); else tempNotesFromParser += "\n" + line.trim();
+                        }
+                        continue;
+                    }
+                    if (staffName.length === 0 || staffName === "姓名") continue;
+                    tempStaffNames.add(staffName);
+                    tableParseYieldedData = true;
+                    for (const dayNumStr in datePositions) {
+                        const dayNumber = parseInt(dayNumStr);
+                        const charIndexForDay = datePositions[dayNumStr];
+                        if (charIndexForDay < line.length && (line[charIndexForDay] === '值' || line[charIndexForDay] === 'v' || line[charIndexForDay] === 'V' || line[charIndexForDay] === 'o' || line[charIndexForDay] === 'O' || line[charIndexForDay] === '0')) {
+                            const dateStr = `${yearToUse}-${String(monthToUse_0_indexed + 1).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
+                            tempShifts[dateStr] = staffName;
+                        }
+                    }
+                }
+                if (!tempNotesFromParser && lines.length > dateHeaderLineIndex + tempStaffNames.size + 1) {
+                     let staffNamesArray = Array.from(tempStaffNames);
+                     let noteStartIndex = dateHeaderLineIndex + 1;
+                     for(let k=dateHeaderLineIndex + 1; k < lines.length; k++){
+                         let isStaffLine = false;
+                         for(const sName of staffNamesArray) {
+                             const staffLineRegex = new RegExp(`^${sName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\S+`);
+                             if(staffLineRegex.test(lines[k])) {
+                                 isStaffLine = true;
+                                 break;
+                             }
+                         }
+                         if(isStaffLine) noteStartIndex = k + 1; else break;
+                     }
+                     if (noteStartIndex < lines.length) {
+                        let potentialNoteLines = lines.slice(noteStartIndex).join("\n").trim();
+                        if (potentialNoteLines && potentialNoteLines.length > 5 ) {
+                            tempNotesFromParser = potentialNoteLines;
+                        }
+                     }
+                }
+            }
+            if (!tableParseYieldedData) {
+                tempStaffNames.clear(); tempShifts = {}; tempNotesFromParser = "";
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine === "") continue;
+                    const parts = trimmedLine.split(/\s+/);
+                    if (parts.length >= 2) {
+                        const nameCandidate = parts[0];
+                        if (nameCandidate.length > 0 && nameCandidate.length < 15 && !/^\d+$/.test(nameCandidate)) {
+                            let datesForThisName = []; let isNameDateLine = true;
+                            for (let k = 1; k < parts.length; k++) {
+                                const dayNum = parseInt(parts[k]);
+                                if (!isNaN(dayNum) && dayNum >= 1 && dayNum <= 31) {
+                                    datesForThisName.push(dayNum);
+                                } else {
+                                    isNameDateLine = false;
+                                    break;
+                                }
+                            }
+                            if (isNameDateLine && datesForThisName.length > 0) {
+                                tempStaffNames.add(nameCandidate);
+                                datesForThisName.forEach(dayNum => {
+                                    const dateStr = `${yearToUse}-${String(monthToUse_0_indexed + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                                    tempShifts[dateStr] = nameCandidate;
+                                });
+                            } else {
+                                if (!tempNotesFromParser) tempNotesFromParser = trimmedLine; else tempNotesFromParser += "\n" + trimmedLine;
+                            }
+                        } else {
+                            if (!tempNotesFromParser) tempNotesFromParser = trimmedLine; else tempNotesFromParser += "\n" + trimmedLine;
+                        }
+                    } else if (trimmedLine.length > 0) {
+                        if (!tempNotesFromParser) tempNotesFromParser = trimmedLine; else tempNotesFromParser += "\n" + trimmedLine;
+                    }
+                }
+            }
+            const success = tempStaffNames.size > 0 || Object.keys(tempShifts).length > 0;
+            return { success, parsedYear: yearToUse, parsedMonth: monthToUse_0_indexed, parsedStaffNames: Array.from(tempStaffNames), parsedShifts: tempShifts, parsedNotes: tempNotesFromParser };
+        },
+        applyParsedDataToAppState: (year, month_0_indexed, shiftsToApply, staffNamesToApply, notesToApply) => {
+            AppState.currentYear = year;
+            AppState.currentMonth = month_0_indexed;
+            const combinedStaffNames = new Set([...AppState.staffNames, ...staffNamesToApply]);
+            AppState.staffNames = Array.from(combinedStaffNames);
+            StaffManager.assignColorsToStaff();
+            const targetMonthPrefix = `${year}-${String(month_0_indexed + 1).padStart(2, '0')}`;
+            for (const dateKey in AppState.shifts) {
+                if (dateKey.startsWith(targetMonthPrefix)) delete AppState.shifts[dateKey];
+            }
+            for(const dateKey in shiftsToApply) {
+                if (dateKey.startsWith(targetMonthPrefix)) {
+                    AppState.shifts[dateKey] = shiftsToApply[dateKey];
+                }
+            }
+            if (notesToApply && notesToApply.trim() !== "") {
+                AppState.notes = notesToApply;
+            }
+            DataStorage.saveData();
+            UI.updateAllUI();
+            Calendar.render();
+            Utils.showCustomAlert(`主要班表已成功匯入/更新 ${year}年${month_0_indexed + 1}月 的資料！`, "success");
+        },
+        triggerImportScheduleFromPastedText: () => {
+            if (!UIElements.fullSchedulePasteArea) return;
+            const text = UIElements.fullSchedulePasteArea.value;
+            if (!text.trim()) {
+                Utils.showCustomAlert("請先在文字區域貼上主要的班表內容。", "info");
+                return;
+            }
+            const intermediateData = ScheduleParser.parseTextToIntermediateData(text, AppState.currentYear, AppState.currentMonth + 1);
+            if (intermediateData.success) {
+                ScheduleParser.applyParsedDataToAppState(
+                    intermediateData.parsedYear, intermediateData.parsedMonth,
+                    intermediateData.parsedShifts, intermediateData.parsedStaffNames, intermediateData.parsedNotes
+                );
+                 UIElements.fullSchedulePasteArea.value = "";
+            } else {
+                 Utils.showCustomAlert("未能在貼上的文字中找到任何有效的主要班表資料。", "error");
+            }
+        }
+    };
+
+    const UI = {
+        cacheDOMElements: () => {
+            UIElements.mainTitle = document.getElementById('mainTitle');
+            UIElements.monthYearDisplay = document.getElementById('monthYearDisplay');
+            UIElements.calendarGrid = document.getElementById('calendarGrid');
+            UIElements.staffNameInput = document.getElementById('staffNameInput');
+            UIElements.fullSchedulePasteArea = document.getElementById('fullSchedulePasteArea');
+            UIElements.staffListDiv = document.getElementById('staffList');
+            UIElements.assignmentModal = document.getElementById('assignmentModal');
+            UIElements.modalStaffList = document.getElementById('modalStaffList');
+            UIElements.clearAssignmentButton = document.getElementById('clearAssignmentButton');
+            UIElements.noStaffMessage = document.getElementById('noStaffMessage');
+            UIElements.customAlertBox = document.getElementById('customAlert');
+            UIElements.customAlertMessageBox = document.getElementById('customAlertMessage');
+            UIElements.staffFilterSelect = document.getElementById('staffFilterSelect');
+            UIElements.autoScheduleConfirmModal = document.getElementById('autoScheduleConfirmModal');
+            UIElements.autoScheduleConfirmMessage = document.getElementById('autoScheduleConfirmMessage');
+            UIElements.confirmAutoScheduleButton = document.getElementById('confirmAutoScheduleButton');
+            UIElements.startWeekdaySelect = document.getElementById('startWeekdaySelect');
+            UIElements.startPreHolidaySelect = document.getElementById('startPreHolidaySelect');
+            UIElements.startHolidaySelect = document.getElementById('startHolidaySelect');
+            UIElements.primaryScheduleTabButton = document.getElementById('primaryScheduleTabButton');
+            UIElements.secondaryScheduleTabButton = document.getElementById('secondaryScheduleTabButton');
+            UIElements.primaryScheduleControls = document.getElementById('primaryScheduleControls');
+            UIElements.secondaryScheduleControlsAboveCalendar = document.getElementById('secondaryScheduleControlsAboveCalendar');
+            UIElements.secondaryStaffInfoDiv = document.getElementById('secondaryStaffInfoDiv');
+            UIElements.toggleSecondaryStaffInfoButton = document.getElementById('toggleSecondaryStaffInfoButton');
+            UIElements.exportPrimaryScheduleButton = document.getElementById('exportPrimaryScheduleButton');
+            UIElements.exportSecondaryScheduleButton = document.getElementById('exportSecondaryScheduleButton');
+            UIElements.savePrimaryScheduleButton = document.getElementById('savePrimaryScheduleButton');
+            UIElements.clearPrimaryScheduleButton = document.getElementById('clearPrimaryScheduleButton');
+            UIElements.managementModal = document.getElementById('managementModal');
+            UIElements.openManagementModalButton = document.getElementById('openManagementModalButton');
+            UIElements.closeManagementModalButton = document.getElementById('closeManagementModalButton');
+            UIElements.sentryStartDate = document.getElementById('sentryStartDate');
+            UIElements.sentryStartTime = document.getElementById('sentryStartTime');
+            UIElements.secGroupA = document.getElementById('secGroupA');
+            UIElements.secGroupB = document.getElementById('secGroupB');
+            UIElements.secGroupC = document.getElementById('secGroupC');
+            UIElements.secAnchorDate = document.getElementById('secAnchorDate');
+            UIElements.secAnchorGroup = document.getElementById('secAnchorGroup');
+            UIElements.confirmModal = document.getElementById('confirmModal');
+            UIElements.confirmModalTitle = document.getElementById('confirmModalTitle').querySelector('span');
+            UIElements.confirmModalMessage = document.getElementById('confirmModalMessage');
+            UIElements.acceptConfirmButton = document.getElementById('acceptConfirmButton');
+            UIElements.cancelConfirmButton = document.getElementById('cancelConfirmButton');
+            UIElements.closeConfirmModalButton = document.getElementById('closeConfirmModalButton');
+            UIElements.printScheduleButton = document.getElementById('printScheduleButton');
+        },
+        updateAllUI: () => {
+            UI.updateStaffListUI();
+            UI.updateStaffFilterUI();
+            UI.updateSentryScheduleFormUI();
+            UI.updateSecondaryScheduleFormUI();
+        },
+        setActiveView: (viewName) => {
+            AppState.activeView = viewName;
+
+            const tabs = {
+                primary: UIElements.primaryScheduleTabButton,
+                secondary: UIElements.secondaryScheduleTabButton,
+            };
+            const panels = {
+                primary: UIElements.primaryScheduleControls,
+                secondary: UIElements.secondaryScheduleControlsAboveCalendar,
+            };
+
+            if(UIElements.mainTitle) UIElements.mainTitle.textContent = "排班工具";
+
+            for (const key in tabs) {
+                const isActive = key === viewName;
+                if(tabs[key]) tabs[key].classList.toggle('active-tab', isActive);
+                if(tabs[key]) tabs[key].setAttribute('aria-selected', isActive);
+                if(key !== 'primary' && panels[key]) panels[key].classList.toggle('hidden', !isActive);
+            }
+            if(panels['primary']) panels['primary'].style.display = viewName === 'primary' ? 'block' : 'none';
+
+            if (viewName === 'secondary') {
+                UI.updateSecondaryStaffInfoUI();
+                const showInfo = AppState.secondarySchedule.isStaffInfoVisible;
+                UIElements.secondaryStaffInfoDiv.classList.toggle('hidden', !showInfo);
+                UIElements.toggleSecondaryStaffInfoButton.textContent = showInfo ? '隱藏組別成員' : '顯示組別成員';
+            }
+
+            Calendar.render();
+        },
+        toggleSecondaryStaffInfo: () => {
+            AppState.secondarySchedule.isStaffInfoVisible = !AppState.secondarySchedule.isStaffInfoVisible;
+            if (AppState.secondarySchedule.isStaffInfoVisible) {
+                UIElements.secondaryStaffInfoDiv.classList.remove('hidden');
+                UIElements.toggleSecondaryStaffInfoButton.textContent = '隱藏組別成員';
+            } else {
+                UIElements.secondaryStaffInfoDiv.classList.add('hidden');
+                UIElements.toggleSecondaryStaffInfoButton.textContent = '顯示組別成員';
+            }
+        },
+        updateStaffListUI: () => {
+            if (!UIElements.staffListDiv) return;
+            UIElements.staffListDiv.innerHTML = '';
+            if (AppState.staffNames.length === 0) {
+                UIElements.staffListDiv.innerHTML = '<p class="text-sm text-slate-500">尚未新增任何主要班表人員。</p>';
+                return;
+            }
+            const ul = document.createElement('ul');
+            ul.className = 'space-y-1';
+            AppState.staffNames.forEach((name, index) => {
+                const li = document.createElement('li');
+                li.className = 'text-sm p-2 bg-sky-50 rounded-md flex justify-between items-center';
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = name;
+                const colorIndicator = document.createElement('span');
+                colorIndicator.className = 'staff-color-indicator';
+                const personColor = AppState.staffColors[name] || { background: '#CCCCCC', text: '#000000' };
+                colorIndicator.style.backgroundColor = personColor.background;
+                colorIndicator.style.borderColor = personColor.text;
+                const nameContainer = document.createElement('div');
+                nameContainer.appendChild(colorIndicator);
+                nameContainer.appendChild(nameSpan);
+                li.appendChild(nameContainer);
+                const removeBtn = document.createElement('button');
+                removeBtn.innerHTML = '&times;';
+                removeBtn.className = 'text-red-500 hover:text-red-700 font-bold px-1 leading-none';
+                removeBtn.title = `移除 ${name}`;
+                removeBtn.setAttribute('aria-label', `移除主要班表人員 ${name}`);
+                removeBtn.onclick = (event) => { event.stopPropagation(); StaffManager.removeStaffMember(index); };
+                li.appendChild(removeBtn);
+                ul.appendChild(li);
+            });
+            UIElements.staffListDiv.appendChild(ul);
+        },
+        updateSecondaryStaffInfoUI: () => {
+            if (!UIElements.secondaryStaffInfoDiv) return;
+            UIElements.secondaryStaffInfoDiv.innerHTML = '';
+            const header = document.createElement('p');
+            header.className = 'font-medium text-slate-700 mb-1';
+            header.textContent = '固定人員: ' + AppState.secondarySchedule.staff.join('、');
+            UIElements.secondaryStaffInfoDiv.appendChild(header);
+            const groupsList = document.createElement('ul');
+            groupsList.className = 'list-none space-y-1';
+            AppState.secondarySchedule.groupDefinitions.forEach(group => {
+                const listItem = document.createElement('li');
+                listItem.className = 'flex items-center';
+                const colorIndicator = document.createElement('span');
+                colorIndicator.className = 'staff-color-indicator';
+                colorIndicator.style.backgroundColor = group.color.background;
+                colorIndicator.style.borderColor = group.color.text;
+                listItem.appendChild(colorIndicator);
+                listItem.appendChild(document.createTextNode(`組 ${group.name}: ${group.members.join('、')}`));
+                groupsList.appendChild(listItem);
+            });
+            UIElements.secondaryStaffInfoDiv.appendChild(groupsList);
+        },
+        updateSecondaryScheduleFormUI: () => {
+            const groupDefs = AppState.secondarySchedule.groupDefinitions;
+            if (UIElements.secGroupA) UIElements.secGroupA.value = groupDefs[0]?.members.join(', ') || '';
+            if (UIElements.secGroupB) UIElements.secGroupB.value = groupDefs[1]?.members.join(', ') || '';
+            if (UIElements.secGroupC) UIElements.secGroupC.value = groupDefs[2]?.members.join(', ') || '';
+            if (UIElements.secAnchorDate) UIElements.secAnchorDate.value = AppState.secondarySchedule.anchor.date || '';
+            if (UIElements.secAnchorGroup) UIElements.secAnchorGroup.value = AppState.secondarySchedule.anchor.groupName || 'B';
+        },
+        updateSentryScheduleFormUI: () => {
+            if (!UIElements.sentryStartDate || !UIElements.sentryStartTime) return;
+            const { initialCondition, timeSlots } = AppState.sentrySchedule;
+
+            UIElements.sentryStartDate.value = initialCondition.date;
+
+            const select = UIElements.sentryStartTime;
+            select.innerHTML = '';
+            timeSlots.forEach(slot => {
+                const option = document.createElement('option');
+                option.value = slot;
+                option.textContent = slot;
+                select.appendChild(option);
+            });
+            select.value = initialCondition.time;
+        },
+        updateStaffFilterUI: () => {
+            if (!UIElements.staffFilterSelect) return;
+            const currentFilterValue = UIElements.staffFilterSelect.value;
+            UIElements.staffFilterSelect.innerHTML = '';
+            const allOption = document.createElement('option');
+            allOption.value = "ALL";
+            allOption.textContent = "所有主要班表人員";
+            UIElements.staffFilterSelect.appendChild(allOption);
+            AppState.staffNames.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                UIElements.staffFilterSelect.appendChild(option);
+            });
+            if (AppState.staffNames.includes(currentFilterValue)) {
+                UIElements.staffFilterSelect.value = currentFilterValue;
+            } else {
+                 UIElements.staffFilterSelect.value = "ALL";
+                 AppState.selectedStaffForFilter = "ALL";
+            }
+        },
+        openAssignmentModal: (dateStr) => {
+            if (AppState.selectedDateForAssignment) {
+                const oldSelectedCell = UIElements.calendarGrid.querySelector(`[data-date="${AppState.selectedDateForAssignment}"]`);
+                if (oldSelectedCell) oldSelectedCell.classList.remove('selected-day');
+            }
+
+            AppState.selectedDateForAssignment = dateStr;
+            const newSelectedCell = UIElements.calendarGrid.querySelector(`[data-date="${dateStr}"]`);
+            if (newSelectedCell) newSelectedCell.classList.add('selected-day');
+
+            if (!UIElements.assignmentModal || !UIElements.modalStaffList || !UIElements.noStaffMessage || !UIElements.clearAssignmentButton) return;
+            UIElements.modalStaffList.innerHTML = '';
+            if (AppState.staffNames.length === 0) {
+                UIElements.noStaffMessage.classList.remove('hidden');
+                UIElements.modalStaffList.classList.add('hidden');
+                UIElements.clearAssignmentButton.classList.add('hidden');
+            } else {
+                UIElements.noStaffMessage.classList.add('hidden');
+                UIElements.modalStaffList.classList.remove('hidden');
+                AppState.staffNames.forEach(name => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    const colorIndicator = document.createElement('span');
+                    colorIndicator.className = 'staff-color-indicator';
+                    const personColor = AppState.staffColors[name] || { background: '#CCCCCC', text: '#000000' };
+                    colorIndicator.style.backgroundColor = personColor.background;
+                    colorIndicator.style.borderColor = personColor.text;
+                    const nameText = document.createTextNode(name);
+                    button.appendChild(colorIndicator);
+                    button.appendChild(nameText);
+                    button.className = 'block w-full text-left p-2 hover:bg-slate-100 rounded-md flex items-center';
+                    button.onclick = () => UI.assignShift(name);
+                    UIElements.modalStaffList.appendChild(button);
+                });
+                if (AppState.shifts[AppState.selectedDateForAssignment]) {
+                    UIElements.clearAssignmentButton.classList.remove('hidden');
+                    UIElements.clearAssignmentButton.textContent = `清除 ${AppState.shifts[AppState.selectedDateForAssignment]} 的主要班表值班`;
+                } else {
+                    UIElements.clearAssignmentButton.classList.add('hidden');
+                }
+            }
+            UIElements.assignmentModal.style.display = 'flex';
+            const firstButton = UIElements.modalStaffList.querySelector('button');
+            if (firstButton) {
+                firstButton.focus();
+            } else if (!UIElements.clearAssignmentButton.classList.contains('hidden')) {
+                UIElements.clearAssignmentButton.focus();
+            } else {
+                 UIElements.assignmentModal.querySelector('.close-button').focus();
+            }
+        },
+        closeAssignmentModal: () => {
+            if (AppState.selectedDateForAssignment) {
+                const selectedCell = UIElements.calendarGrid.querySelector(`[data-date="${AppState.selectedDateForAssignment}"]`);
+                if (selectedCell) selectedCell.classList.remove('selected-day');
+            }
+            if (UIElements.assignmentModal) UIElements.assignmentModal.style.display = 'none';
+            AppState.selectedDateForAssignment = null;
+        },
+        assignShift: (personName) => {
+            if (AppState.selectedDateForAssignment) {
+                AppState.shifts[AppState.selectedDateForAssignment] = personName;
+                Calendar.render();
+                DataStorage.saveData();
+                UI.closeAssignmentModal();
+                Utils.showCustomAlert(`${personName} 已被指派至 ${AppState.selectedDateForAssignment} 的主要班表。`, "success");
+            }
+        },
+        clearAssignment: () => {
+            if (AppState.selectedDateForAssignment && AppState.shifts[AppState.selectedDateForAssignment]) {
+                const clearedPerson = AppState.shifts[AppState.selectedDateForAssignment];
+                delete AppState.shifts[AppState.selectedDateForAssignment];
+                Calendar.render();
+                DataStorage.saveData();
+                UI.closeAssignmentModal();
+                Utils.showCustomAlert(`${AppState.selectedDateForAssignment} 的 ${clearedPerson} 主要班表值班已清除。`, "success");
+            }
+        },
+        openAutoScheduleConfirmModal: (defaults = {}) => {
+            const autoScheduleConfirmModal = UIElements.autoScheduleConfirmModal;
+            const autoScheduleConfirmMessage = UIElements.autoScheduleConfirmMessage;
+            const confirmAutoScheduleButton = UIElements.confirmAutoScheduleButton;
+            const startWeekdaySelect = UIElements.startWeekdaySelect;
+            const startPreHolidaySelect = UIElements.startPreHolidaySelect;
+            const startHolidaySelect = UIElements.startHolidaySelect;
+
+            if (!autoScheduleConfirmModal || !autoScheduleConfirmMessage || !confirmAutoScheduleButton || !startWeekdaySelect || !startPreHolidaySelect || !startHolidaySelect) return;
+
+            autoScheduleConfirmMessage.textContent = `您確定要為 ${AppState.currentYear}年 ${AppState.currentMonth + 1}月 自動產生初步主要班表嗎？\n這將會覆蓋本月現有的每日主要班表排班，並依照三種獨立的輪替順序進行。`;
+            [startWeekdaySelect, startPreHolidaySelect, startHolidaySelect].forEach(select => {
+                select.innerHTML = '';
+                const defaultOption = document.createElement('option');
+                defaultOption.value = "";
+                defaultOption.textContent = "依預設排序 (名單首位)";
+                select.appendChild(defaultOption);
+            });
+            AppState.staffNames.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                startWeekdaySelect.appendChild(option.cloneNode(true));
+                startPreHolidaySelect.appendChild(option.cloneNode(true));
+                startHolidaySelect.appendChild(option.cloneNode(true));
+            });
+            if (defaults.weekday) startWeekdaySelect.value = defaults.weekday;
+            if (defaults.preHoliday) startPreHolidaySelect.value = defaults.preHoliday;
+            if (defaults.holiday) startHolidaySelect.value = defaults.holiday;
+            autoScheduleConfirmModal.style.display = 'flex';
+            startWeekdaySelect.focus();
+        },
+        closeAutoScheduleConfirmModal: () => {
+            if (UIElements.autoScheduleConfirmModal) UIElements.autoScheduleConfirmModal.style.display = 'none';
+        },
+        openManagementModal: () => {
+            if (UIElements.managementModal) UIElements.managementModal.style.display = 'flex';
+        },
+        closeManagementModal: () => {
+            if (UIElements.managementModal) UIElements.managementModal.style.display = 'none';
+        },
+        openConfirmModal: (title, message, onConfirm) => {
+            UIElements.confirmModalTitle.textContent = title;
+            UIElements.confirmModalMessage.textContent = message;
+
+            const newAcceptButton = UIElements.acceptConfirmButton.cloneNode(true);
+            UIElements.acceptConfirmButton.parentNode.replaceChild(newAcceptButton, UIElements.acceptConfirmButton);
+            UIElements.acceptConfirmButton = newAcceptButton;
+
+            UIElements.acceptConfirmButton.addEventListener('click', () => {
+                onConfirm();
+                UI.closeConfirmModal();
+            });
+
+            UIElements.confirmModal.style.display = 'flex';
+            UIElements.acceptConfirmButton.focus();
+        },
+        closeConfirmModal: () => {
+            if(UIElements.confirmModal) UIElements.confirmModal.style.display = 'none';
+        }
+    };
+
+    const Exporter = {
+        exportToICS: () => {
+            let shiftsToExport = {};
+            const isSinglePersonExport = AppState.selectedStaffForFilter !== "ALL";
+            const currentMonthPrefix = `${AppState.currentYear}-${String(AppState.currentMonth + 1).padStart(2, '0')}`;
+
+            for (const dateStr in AppState.shifts) {
+                 if (dateStr.startsWith(currentMonthPrefix)) {
+                     if (!isSinglePersonExport || AppState.shifts[dateStr] === AppState.selectedStaffForFilter) {
+                        shiftsToExport[dateStr] = AppState.shifts[dateStr];
+                     }
+                 }
+            }
+             if (Object.keys(shiftsToExport).length === 0) {
+                Utils.showCustomAlert(`沒有符合條件的主要班表資料可供匯出。`, "info");
+                return;
+            }
+
+            let icsEvents = ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:-//SHIFTTOOL_${Utils.getLocalStorageKey('').split('_')[1]}//Local//ZH`];
+            for (const dateStr in shiftsToExport) {
+                const personName = shiftsToExport[dateStr];
+                const date = new Date(dateStr + 'T00:00:00');
+                const startDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+                const endDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate() + 1));
+                const formatDateToICS = (d) => d.getUTCFullYear() + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0');
+
+                let eventSummary = isSinglePersonExport ? "❗️值班" : personName;
+                const sentryShiftTime = AppState.sentrySchedule.shifts[dateStr];
+                if (sentryShiftTime && sentryShiftTime !== AppState.sentrySchedule.config.restDayLabel) {
+                    eventSummary += ` (查哨 ${sentryShiftTime.substring(0, 2)})`;
+                }
+
+                icsEvents.push('BEGIN:VEVENT');
+                icsEvents.push(`UID:primary-${dateStr}-${personName.replace(/\s+/g, '')}@shifttool.local`);
+                icsEvents.push(`DTSTAMP:${new Date().toISOString().replace(/[-:.]/g, '').substring(0, 15)}Z`);
+                icsEvents.push(`DTSTART;VALUE=DATE:${formatDateToICS(startDate)}`);
+                icsEvents.push(`DTEND;VALUE=DATE:${formatDateToICS(endDate)}`);
+                icsEvents.push(`SUMMARY:${eventSummary}`);
+                icsEvents.push(`DESCRIPTION:值班人員: ${personName}`);
+                icsEvents.push('END:VEVENT');
+            }
+            icsEvents.push('END:VCALENDAR');
+            Exporter.downloadICS(icsEvents.join('\r\n'), `主要班表_${isSinglePersonExport ? AppState.selectedStaffForFilter + '_' : '全體_'}${AppState.currentYear}${String(AppState.currentMonth + 1).padStart(2, '0')}.ics`);
+        },
+        exportSecondaryToICS: () => {
+            const shiftsToExport = {};
+            const currentMonthPrefix = `${AppState.currentYear}-${String(AppState.currentMonth + 1).padStart(2, '0')}`;
+            for (const dateStr in AppState.secondarySchedule.shifts) {
+                if (dateStr.startsWith(currentMonthPrefix) && !AppState.holidays[dateStr]) {
+                    shiftsToExport[dateStr] = AppState.secondarySchedule.shifts[dateStr];
+                }
+            }
+            if (Object.keys(shiftsToExport).length === 0) {
+                Utils.showCustomAlert("本月沒有可匯出的第二班表資料 (已排除國定假日)。", "info");
+                return;
+            }
+            let icsEvents = ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:-//SHIFTTOOL_${Utils.getLocalStorageKey('').split('_')[1]}//Local//ZH`];
+            for (const dateStr in shiftsToExport) {
+                const groupName = shiftsToExport[dateStr];
+                const groupInfo = AppState.secondarySchedule.groupDefinitions.find(g => g.name === groupName);
+                const date = new Date(dateStr + 'T00:00:00');
+                const startDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+                const endDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate() + 1));
+                const formatDateToICS = (d) => d.getUTCFullYear() + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0');
+                icsEvents.push('BEGIN:VEVENT');
+                icsEvents.push(`UID:secondary-${dateStr}-${groupName.replace(/\s+/g, '')}@shifttool.local`);
+                icsEvents.push(`DTSTAMP:${new Date().toISOString().replace(/[-:.]/g, '').substring(0, 15)}Z`);
+                icsEvents.push(`DTSTART;VALUE=DATE:${formatDateToICS(startDate)}`);
+                icsEvents.push(`DTEND;VALUE=DATE:${formatDateToICS(endDate)}`);
+                icsEvents.push(`SUMMARY:✈️${groupInfo ? groupInfo.name : groupName}組`);
+                if (groupInfo && groupInfo.members) {
+                    icsEvents.push(`DESCRIPTION:組員: ${groupInfo.members.join('、')}`);
+                }
+                icsEvents.push('END:VEVENT');
+            }
+            icsEvents.push('END:VCALENDAR');
+            Exporter.downloadICS(icsEvents.join('\r\n'), `第二班表_${AppState.currentYear}${String(AppState.currentMonth + 1).padStart(2, '0')}.ics`);
+        },
+        downloadICS: (content, filename) => {
+            const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            Utils.showCustomAlert(`${filename} 已匯出。`, "success");
+        }
+    };
+
+    const AutoScheduler = {
+        triggerAutoSchedule: () => {
+            if (AppState.staffNames.length === 0) {
+                Utils.showCustomAlert("請先新增主要班表人員名單才能自動排班。", "info");
+                return;
+            }
+            UI.openAutoScheduleConfirmModal();
+        },
+        proceedWithAutoSchedule: () => {
+            Utils.showCustomAlert("正在自動產生主要班表...", "loading", 0);
+            const currentMonthPrefix = `${AppState.currentYear}-${String(AppState.currentMonth + 1).padStart(2, '0')}`;
+            for (const dateKey in AppState.shifts) {
+                if (dateKey.startsWith(currentMonthPrefix)) {
+                    delete AppState.shifts[dateKey];
+                }
+            }
+            const startWeekdayName = UIElements.startWeekdaySelect ? UIElements.startWeekdaySelect.value : "";
+            const startPreHolidayName = UIElements.startPreHolidaySelect ? UIElements.startPreHolidaySelect.value : "";
+            const startHolidayName = UIElements.startHolidaySelect ? UIElements.startHolidaySelect.value : "";
+
+            const newShifts = AutoScheduler.generateBasicRoundRobin(
+                AppState.currentYear, AppState.currentMonth, AppState.staffNames,
+                startWeekdayName, startPreHolidayName, startHolidayName
+            );
+            for (const dateStr in newShifts) {
+                AppState.shifts[dateStr] = newShifts[dateStr];
+            }
+            DataStorage.saveData();
+            Calendar.render();
+            Utils.hideCustomAlert();
+            Utils.showCustomAlert(`已為 ${AppState.currentYear}年 ${AppState.currentMonth + 1}月 自動產生主要班表。`, "success");
+        },
+        generateBasicRoundRobin: (year, month_0_indexed, staffList, startWeekdayName = "", startPreHolidayName = "", startHolidayName = "") => {
+            const newShifts = {};
+            if (!staffList || staffList.length === 0) return newShifts;
+            const daysInMonth = new Date(year, month_0_indexed + 1, 0).getDate();
+
+            let weekdayIndex = 0;
+            if (startWeekdayName && staffList.includes(startWeekdayName)) weekdayIndex = staffList.indexOf(startWeekdayName);
+
+            let preHolidayIndex = 0;
+            if (startPreHolidayName && staffList.includes(startPreHolidayName)) preHolidayIndex = staffList.indexOf(startPreHolidayName);
+
+            let holidayIndex = 0;
+            if (startHolidayName && staffList.includes(startHolidayName)) holidayIndex = staffList.indexOf(startHolidayName);
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${year}-${String(month_0_indexed + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dayOfWeek = new Date(year, month_0_indexed, day).getDay();
+
+                if (newShifts[dateStr]) continue;
+
+                if (dayOfWeek >= 1 && dayOfWeek <= 4) { 
+                    newShifts[dateStr] = staffList[weekdayIndex];
+                    weekdayIndex = (weekdayIndex + 1) % staffList.length;
+                } else if (dayOfWeek === 5) { 
+                    newShifts[dateStr] = staffList[preHolidayIndex];
+                    preHolidayIndex = (preHolidayIndex + 1) % staffList.length;
+                } else { 
+                    if (dayOfWeek === 0) { 
+                        const yesterday = new Date(year, month_0_indexed, day - 1);
+                        const yesterdayStr = Utils.formatDateToKey(new Date(Date.UTC(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate())));
+                        if (yesterday.getDay() === 6 && newShifts[yesterdayStr]) {
+                            newShifts[dateStr] = newShifts[yesterdayStr];
+                            continue;
+                        }
+                    }
+                    newShifts[dateStr] = staffList[holidayIndex];
+                    holidayIndex = (holidayIndex + 1) % staffList.length;
+                }
+            }
+            return newShifts;
+        },
+        carryOverToNextMonth: () => {
+            if (AppState.staffNames.length === 0) {
+                Utils.showCustomAlert("請先新增主要班表人員才能預排次月班表。", "info");
+                return;
+            }
+            Utils.showCustomAlert("正在預排次月班表...", "loading", 0);
+            const currentYear = AppState.currentYear;
+            const currentMonth_0_indexed = AppState.currentMonth;
+            const staffList = AppState.staffNames;
+
+            let lastWeekdayStaff = "";
+            let lastPreHolidayStaff = "";
+            let lastHolidayStaff = "";
+
+            const daysInCurrentMonth = new Date(currentYear, currentMonth_0_indexed + 1, 0).getDate();
+            for (let day = daysInCurrentMonth; day >= 1; day--) {
+                if (lastWeekdayStaff && lastPreHolidayStaff && lastHolidayStaff) break;
+
+                const dateStr = `${currentYear}-${String(currentMonth_0_indexed + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const assignedPerson = AppState.shifts[dateStr];
+                if (!assignedPerson) continue;
+
+                const dayOfWeek = new Date(currentYear, currentMonth_0_indexed, day).getDay();
+
+                if (dayOfWeek >= 1 && dayOfWeek <= 4) { 
+                    if (!lastWeekdayStaff) lastWeekdayStaff = assignedPerson;
+                } else if (dayOfWeek === 5) { 
+                    if (!lastPreHolidayStaff) lastPreHolidayStaff = assignedPerson;
+                } else { 
+                    if (!lastHolidayStaff) lastHolidayStaff = assignedPerson;
+                }
+            }
+
+            const getNextStaff = (currentStaff) => {
+                if (!currentStaff || !staffList.includes(currentStaff)) return staffList[0] || "";
+                const currentIndex = staffList.indexOf(currentStaff);
+                return staffList[(currentIndex + 1) % staffList.length];
+            };
+
+            const startNextWeekday = getNextStaff(lastWeekdayStaff);
+            const startNextPreHoliday = getNextStaff(lastPreHolidayStaff);
+            const startNextHoliday = getNextStaff(lastHolidayStaff);
+
+            DataStorage.saveData();
+            let nextMonth_0_indexed = currentMonth_0_indexed + 1;
+            let nextMonthYear = currentYear;
+            if (nextMonth_0_indexed > 11) {
+                nextMonth_0_indexed = 0;
+                nextMonthYear++;
+            }
+            AppState.currentYear = nextMonthYear;
+            AppState.currentMonth = nextMonth_0_indexed;
+            DataStorage.loadData();
+
+            const nextMonthPrefix = `${nextMonthYear}-${String(nextMonth_0_indexed + 1).padStart(2, '0')}`;
+            for (const dateKey in AppState.shifts) {
+                if (dateKey.startsWith(nextMonthPrefix)) {
+                    delete AppState.shifts[dateKey];
+                }
+            }
+
+            const newShifts = AutoScheduler.generateBasicRoundRobin(
+                nextMonthYear, nextMonth_0_indexed, AppState.staffNames,
+                startNextWeekday, startNextPreHoliday, startNextHoliday
+            );
+
+            for (const dateStr in newShifts) {
+                AppState.shifts[dateStr] = newShifts[dateStr];
+            }
+
+            DataStorage.saveData();
+            UI.setActiveView('primary');
+            UI.updateAllUI();
+            Calendar.render();
+            Utils.hideCustomAlert();
+            Utils.showCustomAlert(`已自動預排 ${nextMonthYear}年 ${nextMonth_0_indexed + 1}月 的主要班表。`, "success");
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        UI.cacheDOMElements();
+        DataStorage.loadData();
+
+        if (Object.keys(AppState.sentrySchedule.shifts).length === 0) {
+            SentryScheduler.recalculateAll();
+        }
+
+        UI.updateAllUI();
+        UI.setActiveView(AppState.activeView);
+
+        // Event Listeners
+        if (UIElements.clearAssignmentButton) UIElements.clearAssignmentButton.onclick = UI.clearAssignment;
+
+        if (UIElements.staffFilterSelect) {
+            UIElements.staffFilterSelect.addEventListener('change', (event) => {
+                AppState.selectedStaffForFilter = event.target.value;
+                if (AppState.activeView === 'primary') Calendar.render();
+            });
+        }
+
+        UIElements.primaryScheduleTabButton.addEventListener('click', () => UI.setActiveView('primary'));
+        UIElements.secondaryScheduleTabButton.addEventListener('click', () => UI.setActiveView('secondary'));
+
+        if (UIElements.toggleSecondaryStaffInfoButton) {
+            UIElements.toggleSecondaryStaffInfoButton.addEventListener('click', UI.toggleSecondaryStaffInfo);
+        }
+
+        if (UIElements.openManagementModalButton) UIElements.openManagementModalButton.addEventListener('click', UI.openManagementModal);
+        if (UIElements.closeManagementModalButton) UIElements.closeManagementModalButton.addEventListener('click', UI.closeManagementModal);
+
+        if (UIElements.savePrimaryScheduleButton) {
+            UIElements.savePrimaryScheduleButton.addEventListener('click', () => {
+                DataStorage.saveData();
+                Utils.showCustomAlert("所有資料已成功儲存。", "success");
+                UI.closeManagementModal();
+            });
+        }
+
+        if (UIElements.clearPrimaryScheduleButton) {
+            UIElements.clearPrimaryScheduleButton.addEventListener('click', () => {
+                const year = AppState.currentYear;
+                const month = AppState.currentMonth + 1;
+                UI.openConfirmModal(
+                    '確認清除?',
+                    `您確定要永久刪除 ${year}年 ${month}月 的所有主要班表資料嗎？此操作無法復原。`,
+                    () => {
+                        DataStorage.clearCurrentMonthPrimarySchedule();
+                        UI.closeManagementModal(); 
+                    }
+                );
+            });
+        }
+
+        if (UIElements.printScheduleButton) {
+            UIElements.printScheduleButton.addEventListener('click', () => {
+                window.print();
+            });
+        }
+
+        if(UIElements.cancelConfirmButton) UIElements.cancelConfirmButton.addEventListener('click', UI.closeConfirmModal);
+        if(UIElements.closeConfirmModalButton) UIElements.closeConfirmModalButton.addEventListener('click', UI.closeConfirmModal);
+
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                if (UIElements.assignmentModal && UIElements.assignmentModal.style.display === 'flex') UI.closeAssignmentModal();
+                if (UIElements.autoScheduleConfirmModal && UIElements.autoScheduleConfirmModal.style.display === 'flex') UI.closeAutoScheduleConfirmModal();
+                if (UIElements.managementModal && UIElements.managementModal.style.display === 'flex') UI.closeManagementModal();
+                if (UIElements.confirmModal && UIElements.confirmModal.style.display === 'flex') UI.closeConfirmModal();
+            }
+        });
+
+        window.onclick = function(event) {
+            if (event.target == UIElements.assignmentModal) UI.closeAssignmentModal();
+            if (event.target == UIElements.autoScheduleConfirmModal) UI.closeAutoScheduleConfirmModal();
+            if (event.target == UIElements.managementModal) UI.closeManagementModal();
+            if (event.target == UIElements.confirmModal) UI.closeConfirmModal();
+        }
+    });
+    </script>
+    <div style="text-align: center; padding: 1rem 0; color: #6b7280; font-size: 0.875rem;">
+        Copyright © Jean Giono 
+    </div>
 </body>
 </html>
